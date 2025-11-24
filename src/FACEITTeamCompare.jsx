@@ -145,16 +145,20 @@ const createFaceitAPI = (apiKey) => {
 // DATA TRANSFORMATION UTILITIES
 // ============================================================================
 
-const ALL_MAPS = ['de_mirage', 'de_inferno', 'de_ancient', 'de_anubis', 'de_nuke', 'de_vertigo', 'de_dust2'];
+// Current CS2 Active Duty Map Pool (as of 2025)
+// Train, Dust2, Mirage, Overpass, Inferno, Nuke (Anubis removed when Train added back)
+const ALL_MAPS = ['de_train', 'de_dust2', 'de_mirage', 'de_overpass', 'de_inferno', 'de_nuke'];
 const MAP_DISPLAY_NAMES = {
-  'de_mirage': 'Mirage',
-  'de_inferno': 'Inferno', 
-  'de_ancient': 'Ancient',
-  'de_anubis': 'Anubis',
-  'de_nuke': 'Nuke',
-  'de_vertigo': 'Vertigo',
+  'de_train': 'Train',
   'de_dust2': 'Dust 2',
+  'de_mirage': 'Mirage',
   'de_overpass': 'Overpass',
+  'de_inferno': 'Inferno',
+  'de_nuke': 'Nuke',
+  // Legacy maps (for old data compatibility)
+  'de_anubis': 'Anubis',
+  'de_ancient': 'Ancient',
+  'de_vertigo': 'Vertigo',
 };
 
 // Transform FACEIT API data to our app format
@@ -168,12 +172,17 @@ const transformTeamData = (teamDetails, teamStats, memberStats) => {
     if (segment.type === 'Map' && segment.mode === '5v5') {
       const mapName = segment.label;
       const stats = segment.stats || {};
+      const wins = parseInt(stats['Wins'] || 0);
+      const matches = parseInt(stats['Matches'] || 0);
+      const losses = matches - wins;
+
       mapStats[mapName] = {
         wr: parseInt(stats['Win Rate %'] || 0),
-        played: parseInt(stats['Matches'] || 0),
-        avgRating: 0, // Calculated from player stats
-        wins: parseInt(stats['Wins'] || 0),
+        played: matches,
+        wins: wins,
+        losses: losses,
         rounds: parseInt(stats['Rounds'] || 0),
+        avgRounds: matches > 0 ? (parseInt(stats['Rounds'] || 0) / matches).toFixed(1) : '0.0',
       };
     }
   });
@@ -366,13 +375,12 @@ const SAMPLE_TEAMS = {
       { id: '5', name: 'n0va', role: 'Member', rating: 1.12, hs: 55, kpr: 0.76, skillLevel: 8, wins: 134, matches: 185, winRate: 72 },
     ],
     mapStats: {
-      'Mirage': { wr: 72, played: 18 },
-      'Inferno': { wr: 65, played: 14 },
-      'Ancient': { wr: 58, played: 12 },
-      'Anubis': { wr: 80, played: 10 },
-      'Nuke': { wr: 45, played: 11 },
-      'Vertigo': { wr: 50, played: 8 },
-      'Dust 2': { wr: 68, played: 16 },
+      'Train': { wr: 67, played: 15, wins: 10, losses: 5 },
+      'Dust 2': { wr: 68, played: 16, wins: 11, losses: 5 },
+      'Mirage': { wr: 72, played: 18, wins: 13, losses: 5 },
+      'Overpass': { wr: 60, played: 10, wins: 6, losses: 4 },
+      'Inferno': { wr: 65, played: 14, wins: 9, losses: 5 },
+      'Nuke': { wr: 45, played: 11, wins: 5, losses: 6 },
     },
     recentMatches: [
       { opponent: 'Team Nexus', result: 'W', score: '2-1', date: '2025-01-18' },
@@ -396,13 +404,12 @@ const SAMPLE_TEAMS = {
       { id: '10', name: 'apex', role: 'Member', rating: 1.10, hs: 52, kpr: 0.74, skillLevel: 7, wins: 126, matches: 178, winRate: 71 },
     ],
     mapStats: {
-      'Mirage': { wr: 55, played: 20 },
-      'Inferno': { wr: 78, played: 18 },
-      'Ancient': { wr: 62, played: 13 },
-      'Anubis': { wr: 48, played: 12 },
-      'Nuke': { wr: 70, played: 14 },
-      'Vertigo': { wr: 65, played: 10 },
-      'Dust 2': { wr: 52, played: 14 },
+      'Train': { wr: 50, played: 12, wins: 6, losses: 6 },
+      'Dust 2': { wr: 52, played: 14, wins: 7, losses: 7 },
+      'Mirage': { wr: 55, played: 20, wins: 11, losses: 9 },
+      'Overpass': { wr: 63, played: 16, wins: 10, losses: 6 },
+      'Inferno': { wr: 78, played: 18, wins: 14, losses: 4 },
+      'Nuke': { wr: 70, played: 14, wins: 10, losses: 4 },
     },
     recentMatches: [
       { opponent: 'Neon Nights', result: 'L', score: '0-2', date: '2025-01-17' },
@@ -450,13 +457,16 @@ const RatingBadge = ({ rating }) => {
   return <span className={`rating-badge ${getColor(rating)}`}>{rating.toFixed(2)}</span>;
 };
 
-const WinRateBar = ({ wr, label, teamColor }) => (
+const WinRateBar = ({ wr, label, teamColor, wins, losses, played }) => (
   <div className="wr-bar-container">
     <div className="wr-bar-label">{label}</div>
     <div className="wr-bar-track">
       <div className={`wr-bar-fill ${teamColor}`} style={{ width: `${wr}%` }} />
     </div>
-    <div className="wr-bar-value">{wr}%</div>
+    <div className="wr-bar-stats">
+      <span className="wr-record">{wins}W - {losses}L</span>
+      <span className="wr-value">{wr}%</span>
+    </div>
   </div>
 );
 
@@ -475,7 +485,7 @@ const LoadingSpinner = () => (
 );
 
 // Team Search Component
-const TeamSearch = ({ label, onSelect, selectedTeam, excludeId }) => {
+const TeamSearch = ({ label, onSelect, selectedTeam, excludeId, api }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -487,14 +497,33 @@ const TeamSearch = ({ label, onSelect, selectedTeam, excludeId }) => {
       return;
     }
     setIsSearching(true);
-    // In demo mode, filter sample teams
-    const filtered = Object.values(SAMPLE_TEAMS).filter(
-      t => t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-           t.tag.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    setResults(filtered);
+
+    try {
+      if (api) {
+        // Use real API when available
+        const response = await api.searchTeams(searchQuery, 20);
+        const teams = response.items || [];
+        setResults(teams.map(team => ({
+          id: team.team_id,
+          name: team.name,
+          tag: team.nickname,
+          avatar: team.avatar,
+        })));
+      } else {
+        // In demo mode, filter sample teams
+        const filtered = Object.values(SAMPLE_TEAMS).filter(
+          t => t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+               t.tag.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+        setResults(filtered);
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+      setResults([]);
+    }
+
     setIsSearching(false);
-  }, []);
+  }, [api]);
 
   useEffect(() => {
     const timeout = setTimeout(() => handleSearch(query), 300);
@@ -643,16 +672,21 @@ const TeamCard = ({ team, side }) => {
         </>
       )}
 
-      <div className="section-title">Map Win Rates</div>
+      <div className="section-title">Map Win Rates (Current Pool)</div>
       <div className="map-wr-list">
-        {mapEntries.length > 0 ? mapEntries.map(([mapName, stats]) => (
-          <WinRateBar 
-            key={mapName}
-            wr={stats.wr || 0}
-            label={mapName}
-            teamColor={side}
-          />
-        )) : (
+        {mapEntries.length > 0 ? mapEntries
+          .filter(([mapName]) => ALL_MAPS.includes(Object.keys(MAP_DISPLAY_NAMES).find(key => MAP_DISPLAY_NAMES[key] === mapName)))
+          .map(([mapName, stats]) => (
+            <WinRateBar
+              key={mapName}
+              wr={stats.wr || 0}
+              label={mapName}
+              teamColor={side}
+              wins={stats.wins || 0}
+              losses={stats.losses || 0}
+              played={stats.played || 0}
+            />
+          )) : (
           <div className="no-data">No map data available</div>
         )}
       </div>
@@ -882,18 +916,32 @@ const ApiKeyInput = ({ apiKey, setApiKey, onVerify, verificationStatus }) => {
           placeholder="Enter your FACEIT API key..."
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && apiKey.trim()) {
+              handleVerify();
+            }
+          }}
         />
-        <button 
+        <button
           className="toggle-visibility"
           onClick={() => setShowKey(!showKey)}
           title={showKey ? 'Hide key' : 'Show key'}
         >
           {showKey ? '👁️' : '👁️‍🗨️'}
         </button>
-        <button 
+        {verificationStatus === 'valid' && (
+          <button
+            className="clear-api-btn"
+            onClick={() => setApiKey('')}
+            title="Clear API key"
+          >
+            Clear
+          </button>
+        )}
+        <button
           className="verify-btn"
           onClick={handleVerify}
-          disabled={!apiKey.trim() || isVerifying}
+          disabled={!apiKey.trim() || isVerifying || verificationStatus === 'valid'}
           title="Verify API key"
         >
           {isVerifying ? (
@@ -945,6 +993,31 @@ export default function FACEITTeamCompare() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Verify API key
+  const handleVerifyApiKey = useCallback(async (key) => {
+    const tempApi = createFaceitAPI(key);
+    const result = await tempApi.verifyApiKey();
+    setApiKeyStatus(result.valid ? 'valid' : 'invalid');
+    if (!result.valid) {
+      setError(result.error);
+      localStorage.removeItem('faceit_api_key');
+    } else {
+      setError(null);
+      // Save valid API key to localStorage
+      localStorage.setItem('faceit_api_key', key);
+    }
+  }, []);
+
+  // Load API key from localStorage on mount
+  useEffect(() => {
+    const savedKey = localStorage.getItem('faceit_api_key');
+    if (savedKey) {
+      setApiKey(savedKey);
+      // Auto-verify saved key
+      handleVerifyApiKey(savedKey);
+    }
+  }, [handleVerifyApiKey]);
+
   // Create API instance when key changes
   const api = useMemo(() => {
     if (apiKey && apiKeyStatus === 'valid') {
@@ -953,22 +1026,62 @@ export default function FACEITTeamCompare() {
     return null;
   }, [apiKey, apiKeyStatus]);
 
-  // Verify API key
-  const handleVerifyApiKey = useCallback(async (key) => {
-    const tempApi = createFaceitAPI(key);
-    const result = await tempApi.verifyApiKey();
-    setApiKeyStatus(result.valid ? 'valid' : 'invalid');
-    if (!result.valid) {
-      setError(result.error);
-    } else {
-      setError(null);
-    }
-  }, []);
-
   // Reset status when key changes
   useEffect(() => {
-    setApiKeyStatus(null);
+    if (apiKey === '') {
+      setApiKeyStatus(null);
+      localStorage.removeItem('faceit_api_key');
+    }
   }, [apiKey]);
+
+  // Handle team selection and fetch full team data
+  const handleTeamSelect = useCallback(async (team, setTeam) => {
+    if (!team) {
+      setTeam(null);
+      return;
+    }
+
+    // If team is from sample data or already has full data, just set it
+    if (team.roster && team.mapStats) {
+      setTeam(team);
+      return;
+    }
+
+    // Fetch full team data from API
+    if (!api) {
+      setTeam(team);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const teamDetails = await api.getTeam(team.id);
+      const teamStats = await api.getTeamStats(team.id);
+
+      // Fetch stats for all team members
+      const memberStatsPromises = teamDetails.members.map(member =>
+        api.getPlayerStats(member.user_id).catch(() => ({}))
+      );
+      const memberStatsArray = await Promise.all(memberStatsPromises);
+
+      const memberStats = {};
+      teamDetails.members.forEach((member, idx) => {
+        memberStats[member.user_id] = memberStatsArray[idx];
+      });
+
+      const fullTeamData = transformTeamData(teamDetails, teamStats, memberStats);
+      setTeam(fullTeamData);
+    } catch (err) {
+      console.error('Error fetching team data:', err);
+      setError(`Failed to fetch data for ${team.name}: ${err.message}`);
+      // Still set the basic team data
+      setTeam(team);
+    } finally {
+      setLoading(false);
+    }
+  }, [api]);
 
   const vetoPrediction = useMemo(() => {
     if (teamA && teamB) {
@@ -998,18 +1111,20 @@ export default function FACEITTeamCompare() {
         />
         
         <div className="header-selectors">
-          <TeamSearch 
+          <TeamSearch
             label="Team A"
             selectedTeam={teamA}
-            onSelect={setTeamA}
+            onSelect={(team) => handleTeamSelect(team, setTeamA)}
             excludeId={teamB?.id}
+            api={api}
           />
           <div className="vs-indicator">VS</div>
-          <TeamSearch 
+          <TeamSearch
             label="Team B"
             selectedTeam={teamB}
-            onSelect={setTeamB}
+            onSelect={(team) => handleTeamSelect(team, setTeamB)}
             excludeId={teamA?.id}
+            api={api}
           />
         </div>
       </header>
@@ -1240,6 +1355,25 @@ export default function FACEITTeamCompare() {
           padding: 0 12px;
           cursor: pointer;
           font-size: 16px;
+        }
+
+        .clear-api-btn {
+          font-family: 'Outfit', sans-serif;
+          font-size: 12px;
+          font-weight: 600;
+          padding: 0 14px;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-medium);
+          border-radius: var(--radius-sm);
+          color: var(--text-secondary);
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .clear-api-btn:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+          border-color: var(--loss);
         }
 
         .verify-btn {
@@ -1858,26 +1992,35 @@ export default function FACEITTeamCompare() {
 
         .wr-bar-container {
           display: grid;
-          grid-template-columns: 70px 1fr 50px;
-          gap: 10px;
+          grid-template-columns: 80px 1fr auto;
+          gap: 12px;
           align-items: center;
+          padding: 8px;
+          border-radius: var(--radius-sm);
+          transition: background 0.2s;
+        }
+
+        .wr-bar-container:hover {
+          background: var(--bg-hover);
         }
 
         .wr-bar-label {
           font-size: 12px;
-          font-weight: 500;
+          font-weight: 600;
+          color: var(--text-primary);
         }
 
         .wr-bar-track {
-          height: 8px;
+          height: 10px;
           background: var(--bg-tertiary);
-          border-radius: 4px;
+          border-radius: 5px;
           overflow: hidden;
+          border: 1px solid var(--border-subtle);
         }
 
         .wr-bar-fill {
           height: 100%;
-          border-radius: 4px;
+          border-radius: 5px;
           transition: width 0.5s ease;
         }
 
@@ -1889,12 +2032,27 @@ export default function FACEITTeamCompare() {
           background: linear-gradient(90deg, var(--team-b) 0%, #7eddd6 100%);
         }
 
-        .wr-bar-value {
+        .wr-bar-stats {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .wr-record {
           font-family: 'JetBrains Mono', monospace;
-          font-size: 12px;
+          font-size: 11px;
           font-weight: 600;
+          color: var(--text-muted);
+          min-width: 60px;
+        }
+
+        .wr-value {
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 13px;
+          font-weight: 700;
+          color: var(--text-primary);
+          min-width: 40px;
           text-align: right;
-          color: var(--text-secondary);
         }
 
         .no-data {
