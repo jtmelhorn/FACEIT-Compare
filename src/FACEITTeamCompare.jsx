@@ -154,6 +154,7 @@ const MAP_DISPLAY_NAMES = {
   'de_nuke': 'Nuke',
   'de_vertigo': 'Vertigo',
   'de_dust2': 'Dust 2',
+  'de_overpass': 'Overpass',
 };
 
 // Transform FACEIT API data to our app format
