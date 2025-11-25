@@ -326,7 +326,7 @@ const MAP_DISPLAY_NAMES = {
 const transformTeamData = (teamDetails, teamStats, memberStats) => {
   const lifetime = teamStats?.lifetime || {};
   const segments = teamStats?.segments || [];
-  
+
   // Extract map stats from segments
   const mapStats = {};
   segments.forEach(segment => {
@@ -353,7 +353,7 @@ const transformTeamData = (teamDetails, teamStats, memberStats) => {
   const roster = (teamDetails.members || []).map((member, idx) => {
     const playerStats = memberStats[member.user_id] || {};
     const playerLifetime = playerStats.lifetime || {};
-    
+
     return {
       id: member.user_id,
       name: member.nickname,
@@ -396,7 +396,7 @@ const transformTeamData = (teamDetails, teamStats, memberStats) => {
 const transformPlayerStats = (playerData, statsData) => {
   const lifetime = statsData?.lifetime || {};
   const segments = statsData?.segments || [];
-  
+
   const mapStats = {};
   segments.forEach(segment => {
     if (segment.type === 'Map') {
@@ -769,7 +769,7 @@ const TeamSearch = ({ label, onSelect, selectedTeam, excludeId, api }) => {
         // In demo mode, filter sample teams
         const filtered = Object.values(SAMPLE_TEAMS).filter(
           t => t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-               t.tag.toLowerCase().includes(searchQuery.toLowerCase())
+            t.tag.toLowerCase().includes(searchQuery.toLowerCase())
         );
         setResults(filtered);
       }
@@ -833,12 +833,12 @@ const TeamSearch = ({ label, onSelect, selectedTeam, excludeId, api }) => {
 
 // Team Card Component
 const TeamCard = ({ team, side }) => {
-  const avgRating = team.roster.length > 0 
+  const avgRating = team.roster.length > 0
     ? (team.roster.reduce((sum, p) => sum + p.rating, 0) / team.roster.length).toFixed(2)
     : '1.00';
-  
+
   const mapEntries = Object.entries(team.mapStats || {});
-  
+
   return (
     <div className={`team-card ${side}`}>
       <div className="team-header">
@@ -848,9 +848,9 @@ const TeamCard = ({ team, side }) => {
         <div className="team-info">
           <h2>{team.name}</h2>
           <span className="team-tag">[{team.tag}]</span>
-          <a 
-            href={`https://www.faceit.com/en/teams/${team.id}`} 
-            target="_blank" 
+          <a
+            href={`https://www.faceit.com/en/teams/${team.id}`}
+            target="_blank"
             rel="noopener noreferrer"
             className="faceit-link"
           >
@@ -858,7 +858,7 @@ const TeamCard = ({ team, side }) => {
           </a>
         </div>
       </div>
-      
+
       <div className="team-record">
         <div className="record-item wins">
           <span className="record-num">{team.record.wins}</span>
@@ -882,7 +882,7 @@ const TeamCard = ({ team, side }) => {
           <span>Win%</span>
         </div>
         {team.roster.map((player) => (
-          <Tooltip 
+          <Tooltip
             key={player.id}
             content={
               <div className="player-tooltip">
@@ -955,7 +955,7 @@ const VetoTimeline = ({ vetoOrder, teamA, teamB }) => (
   <div className="veto-timeline">
     <div className="timeline-track">
       {vetoOrder.map((step, idx) => (
-        <Tooltip 
+        <Tooltip
           key={idx}
           content={
             <div className="veto-tooltip">
@@ -1004,9 +1004,9 @@ const VetoPrediction = ({ prediction, teamA, teamB }) => (
           </div>
         </div>
       </div>
-      
+
       <div className="vs-badge">VS</div>
-      
+
       <div className="prediction-card team-b">
         <div className="pred-team">{teamB.tag}</div>
         <div className="pred-items">
@@ -1268,7 +1268,7 @@ const ApiKeyInput = ({ apiKey, setApiKey, onVerify, verificationStatus }) => {
     await onVerify(apiKey);
     setIsVerifying(false);
   };
-  
+
   return (
     <div className="api-key-section">
       <div className="api-key-header">
@@ -1362,6 +1362,7 @@ export default function FACEITTeamCompare() {
   const [error, setError] = useState(null);
   const [vetoFormat, setVetoFormat] = useState('BO3'); // 'BO1' or 'BO3'
   const [viewMode, setViewMode] = useState('single'); // 'compare' or 'single' - default to single
+  const [selectedCompetition, setSelectedCompetition] = useState(null);
 
   // Load cached teams from localStorage on mount
   useEffect(() => {
@@ -1514,9 +1515,9 @@ export default function FACEITTeamCompare() {
             // Only include matches where the team played as an official team (team_id matches)
             // Skip pugs and non-team matches (which have team_id like "faction1" or null)
             if (!leaderTeam.team_id ||
-                leaderTeam.team_id === 'faction1' ||
-                leaderTeam.team_id === 'faction2' ||
-                leaderTeam.team_id !== teamDetails.team_id) {
+              leaderTeam.team_id === 'faction1' ||
+              leaderTeam.team_id === 'faction2' ||
+              leaderTeam.team_id !== teamDetails.team_id) {
               return null;
             }
 
@@ -1565,6 +1566,8 @@ export default function FACEITTeamCompare() {
               score,
               date: new Date(match.started_at * 1000).toLocaleDateString(),
               opponent,
+              competitionId: match.competition_id,
+              competitionName: match.competition_name,
             };
           } catch (err) {
             // Silently skip matches that return 404 or other errors
@@ -1574,6 +1577,22 @@ export default function FACEITTeamCompare() {
         });
 
         const matchDetails = (await Promise.all(matchDetailsPromises)).filter(m => m !== null);
+
+        // Extract unique competitions
+        const competitions = [];
+        const seenCompetitions = new Set();
+
+        matchDetails.forEach(match => {
+          if (match.competitionId && match.competitionName && !seenCompetitions.has(match.competitionId)) {
+            seenCompetitions.add(match.competitionId);
+            competitions.push({
+              id: match.competitionId,
+              name: match.competitionName
+            });
+          }
+        });
+
+        fullTeamData.competitions = competitions;
 
         // Organize matches by map
         matchDetails.forEach(match => {
@@ -1597,10 +1616,52 @@ export default function FACEITTeamCompare() {
     }
   }, [api]);
 
-  // League filtering is handled at the API level when fetching team rosters
-  // No need for client-side filtering anymore
-  const filteredTeamA = teamA;
-  const filteredTeamB = teamB;
+  // Filter team data based on selected competition
+  const filterTeamData = useCallback((teamData, competitionId) => {
+    if (!teamData || !competitionId) return teamData;
+
+    // Deep clone to avoid mutating original state
+    const filtered = JSON.parse(JSON.stringify(teamData));
+
+    // Reset stats
+    let totalWins = 0;
+    let totalMatches = 0;
+
+    // Filter map stats
+    Object.keys(filtered.mapStats).forEach(mapName => {
+      const mapStat = filtered.mapStats[mapName];
+
+      // Filter matches for this map
+      const filteredMatches = mapStat.matches.filter(m => m.competitionId === competitionId);
+
+      // Recalculate map stats based on filtered matches
+      // Note: This is an approximation since we only have recent matches
+      // Ideally we would have all matches, but we work with what we have
+      const wins = filteredMatches.filter(m => m.result === 'W').length;
+      const matches = filteredMatches.length;
+      const losses = matches - wins;
+
+      mapStat.matches = filteredMatches;
+      mapStat.wins = wins;
+      mapStat.losses = losses;
+      mapStat.played = matches;
+      mapStat.wr = matches > 0 ? Math.round((wins / matches) * 100) : 0;
+
+      totalWins += wins;
+      totalMatches += matches;
+    });
+
+    // Update total record
+    filtered.record.wins = totalWins;
+    filtered.record.matches = totalMatches;
+    filtered.record.losses = totalMatches - totalWins;
+    filtered.record.winRate = totalMatches > 0 ? Math.round((totalWins / totalMatches) * 100) : 0;
+
+    return filtered;
+  }, []);
+
+  const filteredTeamA = useMemo(() => filterTeamData(teamA, selectedCompetition), [teamA, selectedCompetition, filterTeamData]);
+  const filteredTeamB = useMemo(() => filterTeamData(teamB, selectedCompetition), [teamB, selectedCompetition, filterTeamData]);
 
   const vetoPrediction = useMemo(() => {
     if (filteredTeamA && filteredTeamB) {
@@ -1615,13 +1676,13 @@ export default function FACEITTeamCompare() {
         <div className="header-brand">
           <div className="brand-icon">
             <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
             </svg>
           </div>
           <h1>FACEIT Compare</h1>
           <span className="brand-tag">CS2 Team Analytics</span>
         </div>
-        
+
         <ApiKeyInput
           apiKey={apiKey}
           setApiKey={setApiKey}
@@ -1665,6 +1726,33 @@ export default function FACEITTeamCompare() {
             </>
           )}
         </div>
+
+        {/* Competition Selector */}
+        {(teamA || teamB) && (
+          <div className="competition-selector">
+            <select
+              value={selectedCompetition || ''}
+              onChange={(e) => setSelectedCompetition(e.target.value || null)}
+              className="competition-select"
+            >
+              <option value="">All Competitions</option>
+              {(() => {
+                // Get unique competitions from both teams
+                const comps = new Map();
+                if (teamA?.competitions) {
+                  teamA.competitions.forEach(c => comps.set(c.id, c.name));
+                }
+                if (teamB?.competitions) {
+                  teamB.competitions.forEach(c => comps.set(c.id, c.name));
+                }
+
+                return Array.from(comps.entries()).map(([id, name]) => (
+                  <option key={id} value={id}>{name}</option>
+                ));
+              })()}
+            </select>
+          </div>
+        )}
       </header>
 
       {error && (
@@ -3692,6 +3780,37 @@ export default function FACEITTeamCompare() {
           background: var(--bg-card);
           border: 1px solid var(--border-subtle);
           border-radius: var(--radius-sm);
+        }
+
+        /* Competition Selector */
+        .competition-selector {
+          margin-top: 16px;
+          display: flex;
+          justify-content: center;
+          width: 100%;
+        }
+
+        .competition-select {
+          background: var(--bg-card);
+          color: var(--text-primary);
+          border: 1px solid var(--border-subtle);
+          padding: 8px 16px;
+          border-radius: var(--radius-md);
+          font-size: 14px;
+          min-width: 250px;
+          cursor: pointer;
+          outline: none;
+          transition: border-color 0.2s;
+        }
+
+        .competition-select:focus {
+          border-color: var(--faceit-orange);
+        }
+
+        .competition-select option {
+          background: var(--bg-secondary);
+          color: var(--text-primary);
+          padding: 8px;
         }
 
         /* Empty State */
