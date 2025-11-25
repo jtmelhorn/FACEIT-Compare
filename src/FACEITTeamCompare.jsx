@@ -139,7 +139,41 @@ const createFaceitAPI = (apiKey) => {
       return response.json();
     },
 
-    // Get championships (leagues)
+    // Search for hubs (leagues) - Note: FACEIT API doesn't have direct hub search
+    // Popular hubs need to be known by ID (e.g., ECL, FPL, etc.)
+    getPopularHubs: async () => {
+      // This would need to fetch known hub IDs or use organizer search
+      // For now, return a predefined list of popular CS2 league hub IDs
+      return {
+        items: [
+          { hub_id: 'faceit-pro-league', name: 'FACEIT Pro League', game: 'cs2', organizer_name: 'FACEIT' },
+          { hub_id: 'ecl', name: 'ECL', game: 'cs2', organizer_name: 'ECL' },
+          // More would be added based on known hub IDs
+        ]
+      };
+    },
+
+    // Get teams/members in a hub
+    getHubMembers: async (hubId, offset = 0, limit = 100) => {
+      const response = await fetch(
+        `${FACEIT_API_BASE}/hubs/${hubId}/members?offset=${offset}&limit=${limit}`,
+        { headers }
+      );
+      if (!response.ok) throw new Error('Failed to get hub members');
+      return response.json();
+    },
+
+    // Get league season/division roster (teams in specific conference/division)
+    getLeagueSeasonRoster: async (hubId, seasonId, offset = 0, limit = 100) => {
+      const response = await fetch(
+        `${FACEIT_API_BASE}/leaderboards/hubs/${hubId}/seasons/${seasonId}?offset=${offset}&limit=${limit}`,
+        { headers }
+      );
+      if (!response.ok) throw new Error('Failed to get league season roster');
+      return response.json();
+    },
+
+    // Get championships (tournaments - different from leagues)
     getChampionships: async (offset = 0, limit = 20) => {
       const response = await fetch(
         `${FACEIT_API_BASE}/championships?game=${GAME_ID}&offset=${offset}&limit=${limit}`,
@@ -636,19 +670,38 @@ const TeamSearch = ({ label, onSelect, selectedTeam, excludeId, api, selectedLea
       if (api) {
         // If league is selected, get teams from that league
         if (selectedLeague) {
-          const leagueTeams = await api.getChampionshipTeams(selectedLeague.championship_id, 0, 100);
-          const teams = leagueTeams.items || [];
-          const filtered = teams.filter(item =>
-            item.team?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            item.team?.nickname?.toLowerCase().includes(searchQuery.toLowerCase())
+          let teams = [];
+
+          // Handle hub leagues (with season/division)
+          if (selectedLeague.hub_id && selectedLeague.season_id) {
+            const leagueData = await api.getLeagueSeasonRoster(selectedLeague.hub_id, selectedLeague.season_id, 0, 100);
+            const items = leagueData.items || [];
+            teams = items.map(item => ({
+              id: item.player?.player_id || item.team_id,
+              name: item.player?.nickname || item.team_name || 'Unknown',
+              tag: item.player?.nickname || item.team_name || 'Unknown',
+              avatar: item.player?.avatar || '',
+              league: selectedLeague.name,
+              isPlayer: !!item.player, // Flag to indicate if this is a player, not team
+            }));
+          }
+          // Handle championship/tournament
+          else if (selectedLeague.championship_id) {
+            const leagueTeams = await api.getChampionshipTeams(selectedLeague.championship_id, 0, 100);
+            teams = (leagueTeams.items || []).map(item => ({
+              id: item.team.team_id,
+              name: item.team.name,
+              tag: item.team.nickname,
+              avatar: item.team.avatar,
+              league: selectedLeague.name,
+            }));
+          }
+
+          const filtered = teams.filter(team =>
+            team.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            team.tag?.toLowerCase().includes(searchQuery.toLowerCase())
           );
-          setResults(filtered.map(item => ({
-            id: item.team.team_id,
-            name: item.team.name,
-            tag: item.team.nickname,
-            avatar: item.team.avatar,
-            league: selectedLeague.name,
-          })));
+          setResults(filtered);
         } else {
           // Regular search across all teams
           const response = await api.searchTeams(searchQuery, 20);
@@ -1131,15 +1184,32 @@ const ApiKeyInput = ({ apiKey, setApiKey, onVerify, verificationStatus }) => {
   );
 };
 
+// Parse league URL to extract hub ID and season ID
+const parseLeagueUrl = (url) => {
+  // Example: https://www.faceit.com/en/cs2/league/ESEA%20League/a14b8616-45b9-4581-8637-4dfd0b5f6af8/10474798-c048-43ff-b662-fe27250a29d6/overview
+  const match = url.match(/\/league\/[^\/]+\/([a-f0-9-]+)\/([a-f0-9-]+)/i);
+  if (match) {
+    return {
+      hubId: match[1],
+      seasonId: match[2]
+    };
+  }
+  return null;
+};
+
 // League/Hub Selector Component
 const LeagueSelector = ({ selectedLeague, onLeagueChange, api, onSeasonDateChange }) => {
   const [leagues, setLeagues] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [hubUrl, setHubUrl] = useState('');
+  const [urlError, setUrlError] = useState('');
 
   useEffect(() => {
     if (api) {
       setLoading(true);
+      // Use championships API (which includes both tournaments and ongoing leagues)
+      // Or could use getPopularHubs() for known league hubs
       api.getChampionships(0, 50)
         .then(data => {
           setLeagues(data.items || []);
@@ -1152,16 +1222,26 @@ const LeagueSelector = ({ selectedLeague, onLeagueChange, api, onSeasonDateChang
     }
   }, [api]);
 
-  // When league is selected, fetch its details to get season start date
+  // When league/hub is selected, fetch its details
   const handleLeagueSelect = useCallback(async (league) => {
     onLeagueChange(league);
     if (league && api) {
       try {
-        const details = await api.getChampionship(league.championship_id);
-        // Extract season start date from championship details
-        const startDate = details.championship_start || details.subscription_start;
-        if (startDate) {
-          onSeasonDateChange(new Date(startDate * 1000)); // Convert Unix timestamp
+        // For championships (tournaments)
+        if (league.championship_id) {
+          const details = await api.getChampionship(league.championship_id);
+          const startDate = details.championship_start || details.subscription_start;
+          if (startDate) {
+            onSeasonDateChange(new Date(startDate * 1000)); // Convert Unix timestamp
+          }
+        }
+        // For hubs (ongoing leagues) - typically don't have season start dates
+        // They run continuously, so we'd filter by recent matches (e.g., last 30-90 days)
+        else if (league.hub_id) {
+          // Set season start to 90 days ago for ongoing leagues
+          const ninetyDaysAgo = new Date();
+          ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+          onSeasonDateChange(ninetyDaysAgo);
         }
       } catch (err) {
         console.error('Failed to get league details:', err);
@@ -1171,9 +1251,74 @@ const LeagueSelector = ({ selectedLeague, onLeagueChange, api, onSeasonDateChang
     }
   }, [api, onLeagueChange, onSeasonDateChange]);
 
+  // Handle league URL input
+  const handleUrlSubmit = useCallback(async () => {
+    if (!hubUrl.trim()) return;
+
+    const parsed = parseLeagueUrl(hubUrl);
+    if (!parsed) {
+      setUrlError('Invalid league URL format');
+      return;
+    }
+
+    setUrlError('');
+    setLoading(true);
+
+    try {
+      // Fetch hub details
+      const hubDetails = await api.getHub(parsed.hubId);
+
+      // Create league object
+      const league = {
+        hub_id: parsed.hubId,
+        season_id: parsed.seasonId,
+        name: hubDetails.name || 'Custom League',
+        organizer_name: hubDetails.organizer_name || 'FACEIT',
+        type: 'hub'
+      };
+
+      handleLeagueSelect(league);
+      setShowDropdown(false);
+    } catch (err) {
+      console.error('Failed to load league from URL:', err);
+      setUrlError('Failed to load league. Check URL and API key.');
+    } finally {
+      setLoading(false);
+    }
+  }, [hubUrl, api, handleLeagueSelect]);
+
   return (
     <div className="league-selector">
       <label>Filter by League/Hub:</label>
+
+      {/* URL Input Method */}
+      <div className="hub-url-input">
+        <input
+          type="text"
+          placeholder="Paste FACEIT league URL (e.g., faceit.com/en/cs2/league/...)"
+          value={hubUrl}
+          onChange={(e) => {
+            setHubUrl(e.target.value);
+            setUrlError('');
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleUrlSubmit();
+          }}
+        />
+        <button
+          className="url-submit-btn"
+          onClick={handleUrlSubmit}
+          disabled={!hubUrl.trim() || loading}
+        >
+          {loading ? '...' : 'Load'}
+        </button>
+      </div>
+      {urlError && <div className="url-error">{urlError}</div>}
+
+      <div className="or-divider">
+        <span>OR</span>
+      </div>
+
       <div className="league-dropdown-wrapper">
         <button
           className="league-select-btn"
@@ -1854,6 +1999,79 @@ export default function FACEITTeamCompare() {
 
         .filter-icon {
           font-size: 14px;
+        }
+
+        /* Hub URL Input */
+        .hub-url-input {
+          display: flex;
+          gap: 8px;
+          margin-bottom: 12px;
+        }
+
+        .hub-url-input input {
+          flex: 1;
+          font-family: 'Outfit', sans-serif;
+          padding: 10px 14px;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-medium);
+          border-radius: var(--radius-sm);
+          color: var(--text-primary);
+          font-size: 13px;
+        }
+
+        .hub-url-input input:focus {
+          outline: none;
+          border-color: var(--faceit-orange);
+          box-shadow: 0 0 0 3px var(--faceit-orange-dim);
+        }
+
+        .url-submit-btn {
+          font-family: 'Outfit', sans-serif;
+          font-size: 12px;
+          font-weight: 600;
+          padding: 0 20px;
+          background: var(--faceit-orange);
+          border: none;
+          border-radius: var(--radius-sm);
+          color: white;
+          cursor: pointer;
+          transition: all 0.2s;
+          min-width: 60px;
+        }
+
+        .url-submit-btn:hover:not(:disabled) {
+          background: #ff6a1a;
+          box-shadow: 0 0 12px var(--faceit-orange-glow);
+        }
+
+        .url-submit-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .url-error {
+          color: var(--loss);
+          font-size: 12px;
+          margin-top: -8px;
+          margin-bottom: 8px;
+        }
+
+        .or-divider {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin: 16px 0;
+          color: var(--text-muted);
+          font-size: 12px;
+          font-weight: 600;
+        }
+
+        .or-divider::before,
+        .or-divider::after {
+          content: '';
+          flex: 1;
+          height: 1px;
+          background: var(--border-subtle);
         }
 
         .error-notice {
