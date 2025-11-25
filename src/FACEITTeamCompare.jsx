@@ -175,12 +175,43 @@ const createFaceitAPI = (apiKey) => {
 
     // Get league season details
     getLeagueSeason: async (leagueId, seasonId) => {
-      const response = await fetch(
-        `${FACEIT_API_BASE}/leagues/${leagueId}/seasons/${seasonId}`,
-        { headers }
-      );
-      if (!response.ok) throw new Error('Failed to get league season');
-      return response.json();
+      // Try getting the league first, which should contain seasons
+      const leagueUrl = `${FACEIT_API_BASE}/leagues/${leagueId}`;
+      console.log('Fetching league from:', leagueUrl);
+      const leagueResponse = await fetch(leagueUrl, { headers });
+      console.log('League response status:', leagueResponse.status);
+
+      if (!leagueResponse.ok) {
+        const errorText = await leagueResponse.text();
+        console.error('League error response:', errorText);
+        throw new Error(`Failed to get league (${leagueResponse.status}): ${errorText}`);
+      }
+
+      const leagueData = await leagueResponse.json();
+      console.log('League data:', leagueData);
+
+      // Find the specific season in the league data
+      if (leagueData.seasons && Array.isArray(leagueData.seasons)) {
+        const season = leagueData.seasons.find(s => s.season_id === seasonId);
+        if (season) {
+          console.log('Found season in league data:', season);
+          return season;
+        }
+      }
+
+      // If season not found in league data, try the direct season endpoint
+      const seasonUrl = `${FACEIT_API_BASE}/leagues/${leagueId}/seasons/${seasonId}`;
+      console.log('Trying season endpoint:', seasonUrl);
+      const seasonResponse = await fetch(seasonUrl, { headers });
+      console.log('Season response status:', seasonResponse.status);
+
+      if (!seasonResponse.ok) {
+        const errorText = await seasonResponse.text();
+        console.error('Season error response:', errorText);
+        throw new Error(`Failed to get league season (${seasonResponse.status}): ${errorText}`);
+      }
+
+      return seasonResponse.json();
     },
 
     // Get leaderboard by ID
@@ -313,6 +344,7 @@ const transformTeamData = (teamDetails, teamStats, memberStats) => {
         losses: losses,
         rounds: parseInt(stats['Rounds'] || 0),
         avgRounds: matches > 0 ? (parseInt(stats['Rounds'] || 0) / matches).toFixed(1) : '0.0',
+        matches: [], // Will be populated with match details
       };
     }
   });
@@ -709,7 +741,7 @@ const LoadingSpinner = () => (
 );
 
 // Team Search Component
-const TeamSearch = ({ label, onSelect, selectedTeam, excludeId, api, selectedLeague }) => {
+const TeamSearch = ({ label, onSelect, selectedTeam, excludeId, api }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -724,53 +756,15 @@ const TeamSearch = ({ label, onSelect, selectedTeam, excludeId, api, selectedLea
 
     try {
       if (api) {
-        // If league is selected, get teams from that league
-        if (selectedLeague) {
-          let teams = [];
-
-          // Handle leagues (with season/division)
-          if (selectedLeague.league_id && selectedLeague.season_id) {
-            const leagueData = await api.getLeagueSeasonRoster(selectedLeague.league_id, selectedLeague.season_id, 0, 200);
-            const items = leagueData.items || leagueData.leaderboard || [];
-
-            teams = items.map(item => ({
-              // League leaderboards can have players or teams
-              id: item.player?.player_id || item.team?.team_id || item.team_id || item.player_id,
-              name: item.player?.nickname || item.team?.name || item.team_name || item.player_name || 'Unknown',
-              tag: item.player?.nickname || item.team?.nickname || item.team_name || item.player_name || 'Unknown',
-              avatar: item.player?.avatar || item.team?.avatar || '',
-              league: selectedLeague.name,
-              ranking: item.position || item.rank,
-            }));
-          }
-          // Handle championship/tournament
-          else if (selectedLeague.championship_id) {
-            const leagueTeams = await api.getChampionshipTeams(selectedLeague.championship_id, 0, 100);
-            teams = (leagueTeams.items || []).map(item => ({
-              id: item.team.team_id,
-              name: item.team.name,
-              tag: item.team.nickname,
-              avatar: item.team.avatar,
-              league: selectedLeague.name,
-            }));
-          }
-
-          const filtered = teams.filter(team =>
-            team.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            team.tag?.toLowerCase().includes(searchQuery.toLowerCase())
-          );
-          setResults(filtered);
-        } else {
-          // Regular search across all teams
-          const response = await api.searchTeams(searchQuery, 20);
-          const teams = response.items || [];
-          setResults(teams.map(team => ({
-            id: team.team_id,
-            name: team.name,
-            tag: team.nickname,
-            avatar: team.avatar,
-          })));
-        }
+        // Regular search across all teams
+        const response = await api.searchTeams(searchQuery, 20);
+        const teams = response.items || [];
+        setResults(teams.map(team => ({
+          id: team.team_id,
+          name: team.name,
+          tag: team.nickname,
+          avatar: team.avatar,
+        })));
       } else {
         // In demo mode, filter sample teams
         const filtered = Object.values(SAMPLE_TEAMS).filter(
@@ -785,7 +779,7 @@ const TeamSearch = ({ label, onSelect, selectedTeam, excludeId, api, selectedLea
     }
 
     setIsSearching(false);
-  }, [api, selectedLeague]);
+  }, [api]);
 
   useEffect(() => {
     const timeout = setTimeout(() => handleSearch(query), 300);
@@ -1070,15 +1064,15 @@ const VetoPrediction = ({ prediction, teamA, teamB }) => (
 );
 
 // Map Stats Dashboard
-const MapStatsDashboard = ({ teamA, teamB }) => {
+const MapStatsDashboard = ({ teamA, teamB, singleMode }) => {
   const [selectedMap, setSelectedMap] = useState('Mirage');
-  
-  const mapDataA = teamA.mapStats[selectedMap] || { wr: 50, played: 0 };
-  const mapDataB = teamB.mapStats[selectedMap] || { wr: 50, played: 0 };
+
+  const mapDataA = teamA.mapStats[selectedMap] || { wr: 50, played: 0, matches: [] };
+  const mapDataB = teamB ? (teamB.mapStats[selectedMap] || { wr: 50, played: 0, matches: [] }) : null;
 
   const availableMaps = [...new Set([
     ...Object.keys(teamA.mapStats || {}),
-    ...Object.keys(teamB.mapStats || {})
+    ...(teamB ? Object.keys(teamB.mapStats || {}) : [])
   ])];
 
   return (
@@ -1095,59 +1089,170 @@ const MapStatsDashboard = ({ teamA, teamB }) => {
         ))}
       </div>
 
-      <div className="map-comparison">
-        <div className="map-team-stats team-a-stats">
-          <div className="map-team-header">
-            <span className="team-indicator team-a">{teamA.tag}</span>
-          </div>
-          <div className="stat-grid">
-            <div className="stat-item">
-              <span className="stat-value large">{mapDataA.wr}%</span>
-              <span className="stat-label">Win Rate</span>
+      {singleMode ? (
+        /* Single Team View */
+        <div className="map-single-view">
+          <div className="map-team-stats">
+            <div className="map-team-header">
+              <span className="team-indicator team-a">{teamA.tag}</span>
             </div>
-            <div className="stat-item">
-              <span className="stat-value">{mapDataA.played}</span>
-              <span className="stat-label">Maps Played</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="map-visual">
-          <div className="map-icon">{selectedMap.toUpperCase()}</div>
-          <div className="wr-comparison">
-            <div className="wr-compare-bar">
-              <div 
-                className="wr-fill team-a" 
-                style={{ width: `${(mapDataA.wr / (mapDataA.wr + mapDataB.wr)) * 100}%` }}
-              >
-                {mapDataA.wr}%
+            <div className="stat-grid">
+              <div className="stat-item">
+                <span className="stat-value large">{mapDataA.wr}%</span>
+                <span className="stat-label">Win Rate</span>
               </div>
-              <div 
-                className="wr-fill team-b" 
-                style={{ width: `${(mapDataB.wr / (mapDataA.wr + mapDataB.wr)) * 100}%` }}
-              >
-                {mapDataB.wr}%
+              <div className="stat-item">
+                <span className="stat-value">{mapDataA.played}</span>
+                <span className="stat-label">Maps Played</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{mapDataA.wins || 0}</span>
+                <span className="stat-label">Wins</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{mapDataA.losses || 0}</span>
+                <span className="stat-label">Losses</span>
               </div>
             </div>
           </div>
-        </div>
 
-        <div className="map-team-stats team-b-stats">
-          <div className="map-team-header">
-            <span className="team-indicator team-b">{teamB.tag}</span>
-          </div>
-          <div className="stat-grid">
-            <div className="stat-item">
-              <span className="stat-value large">{mapDataB.wr}%</span>
-              <span className="stat-label">Win Rate</span>
-            </div>
-            <div className="stat-item">
-              <span className="stat-value">{mapDataB.played}</span>
-              <span className="stat-label">Maps Played</span>
-            </div>
+          {/* Match List for Single Team */}
+          <div className="map-matches-single">
+            <h3>{teamA.tag} Matches on {selectedMap}</h3>
+            {mapDataA.matches && mapDataA.matches.length > 0 ? (
+              <div className="match-list">
+                {mapDataA.matches.map((match, idx) => (
+                  <div key={idx} className="match-item">
+                    <MatchResult result={match.result} score={match.score} />
+                    <span className="match-opponent">vs {match.opponent}</span>
+                    <span className="match-date">{match.date}</span>
+                    <a
+                      href={`https://www.faceit.com/en/cs2/room/${match.matchId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="match-link"
+                    >
+                      View Match ↗
+                    </a>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="no-matches">No match data available for this map</p>
+            )}
           </div>
         </div>
-      </div>
+      ) : (
+        /* Compare Mode */
+        <>
+          <div className="map-comparison">
+            <div className="map-team-stats team-a-stats">
+              <div className="map-team-header">
+                <span className="team-indicator team-a">{teamA.tag}</span>
+              </div>
+              <div className="stat-grid">
+                <div className="stat-item">
+                  <span className="stat-value large">{mapDataA.wr}%</span>
+                  <span className="stat-label">Win Rate</span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-value">{mapDataA.played}</span>
+                  <span className="stat-label">Maps Played</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="map-visual">
+              <div className="map-icon">{selectedMap.toUpperCase()}</div>
+              <div className="wr-comparison">
+                <div className="wr-compare-bar">
+                  <div
+                    className="wr-fill team-a"
+                    style={{ width: `${(mapDataA.wr / (mapDataA.wr + mapDataB.wr)) * 100}%` }}
+                  >
+                    {mapDataA.wr}%
+                  </div>
+                  <div
+                    className="wr-fill team-b"
+                    style={{ width: `${(mapDataB.wr / (mapDataA.wr + mapDataB.wr)) * 100}%` }}
+                  >
+                    {mapDataB.wr}%
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="map-team-stats team-b-stats">
+              <div className="map-team-header">
+                <span className="team-indicator team-b">{teamB.tag}</span>
+              </div>
+              <div className="stat-grid">
+                <div className="stat-item">
+                  <span className="stat-value large">{mapDataB.wr}%</span>
+                  <span className="stat-label">Win Rate</span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-value">{mapDataB.played}</span>
+                  <span className="stat-label">Maps Played</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Match Lists */}
+          <div className="map-matches-container">
+            <div className="map-matches team-a-matches">
+              <h3>{teamA.tag} Matches on {selectedMap}</h3>
+              {mapDataA.matches && mapDataA.matches.length > 0 ? (
+                <div className="match-list">
+                  {mapDataA.matches.map((match, idx) => (
+                    <div key={idx} className="match-item">
+                      <MatchResult result={match.result} score={match.score} />
+                      <span className="match-opponent">vs {match.opponent}</span>
+                      <span className="match-date">{match.date}</span>
+                      <a
+                        href={`https://www.faceit.com/en/cs2/room/${match.matchId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="match-link"
+                      >
+                        View Match ↗
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="no-matches">No match data available for this map</p>
+              )}
+            </div>
+
+            <div className="map-matches team-b-matches">
+              <h3>{teamB.tag} Matches on {selectedMap}</h3>
+              {mapDataB.matches && mapDataB.matches.length > 0 ? (
+                <div className="match-list">
+                  {mapDataB.matches.map((match, idx) => (
+                    <div key={idx} className="match-item">
+                      <MatchResult result={match.result} score={match.score} />
+                      <span className="match-opponent">vs {match.opponent}</span>
+                      <span className="match-date">{match.date}</span>
+                      <a
+                        href={`https://www.faceit.com/en/cs2/room/${match.matchId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="match-link"
+                      >
+                        View Match ↗
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="no-matches">No match data available for this map</p>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
@@ -1242,196 +1347,6 @@ const ApiKeyInput = ({ apiKey, setApiKey, onVerify, verificationStatus }) => {
   );
 };
 
-// Parse league URL to extract league ID and season ID
-const parseLeagueUrl = (url) => {
-  // Example: https://www.faceit.com/en/cs2/league/ESEA%20League/a14b8616-45b9-4581-8637-4dfd0b5f6af8/10474798-c048-43ff-b662-fe27250a29d6/overview
-  // Pattern: /league/{name}/{leagueId}/{seasonId}/...
-  const match = url.match(/\/league\/[^\/]+\/([a-f0-9-]+)\/([a-f0-9-]+)/i);
-  if (match) {
-    return {
-      leagueId: match[1],  // First UUID is league ID
-      seasonId: match[2]   // Second UUID is season/conference ID
-    };
-  }
-  return null;
-};
-
-// League/Hub Selector Component
-const LeagueSelector = ({ selectedLeague, onLeagueChange, api, onSeasonDateChange }) => {
-  const [leagues, setLeagues] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [hubUrl, setHubUrl] = useState('');
-  const [urlError, setUrlError] = useState('');
-
-  useEffect(() => {
-    if (api) {
-      setLoading(true);
-      // Use championships API (which includes both tournaments and ongoing leagues)
-      // Or could use getPopularHubs() for known league hubs
-      api.getChampionships(0, 50)
-        .then(data => {
-          setLeagues(data.items || []);
-        })
-        .catch(err => {
-          console.error('Failed to load leagues:', err);
-          setLeagues([]);
-        })
-        .finally(() => setLoading(false));
-    }
-  }, [api]);
-
-  // When league/hub is selected, fetch its details
-  const handleLeagueSelect = useCallback(async (league) => {
-    onLeagueChange(league);
-    if (league && api) {
-      try {
-        // For championships (tournaments)
-        if (league.championship_id) {
-          const details = await api.getChampionship(league.championship_id);
-          const startDate = details.championship_start || details.subscription_start;
-          if (startDate) {
-            onSeasonDateChange(new Date(startDate * 1000)); // Convert Unix timestamp
-          }
-        }
-        // For hubs (ongoing leagues) - typically don't have season start dates
-        // They run continuously, so we'd filter by recent matches (e.g., last 30-90 days)
-        else if (league.hub_id) {
-          // Set season start to 90 days ago for ongoing leagues
-          const ninetyDaysAgo = new Date();
-          ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-          onSeasonDateChange(ninetyDaysAgo);
-        }
-      } catch (err) {
-        console.error('Failed to get league details:', err);
-      }
-    } else {
-      onSeasonDateChange(null);
-    }
-  }, [api, onLeagueChange, onSeasonDateChange]);
-
-  // Handle league URL input
-  const handleUrlSubmit = useCallback(async () => {
-    if (!hubUrl.trim()) return;
-
-    const parsed = parseLeagueUrl(hubUrl);
-    if (!parsed) {
-      setUrlError('Invalid league URL format');
-      return;
-    }
-
-    setUrlError('');
-    setLoading(true);
-
-    try {
-      // Fetch league details using correct API
-      const leagueDetails = await api.getLeague(parsed.leagueId);
-      const seasonDetails = await api.getLeagueSeason(parsed.leagueId, parsed.seasonId);
-
-      // Create league object
-      const league = {
-        league_id: parsed.leagueId,
-        season_id: parsed.seasonId,
-        name: `${leagueDetails.name || 'League'} - ${seasonDetails.name || 'Season'}`,
-        organizer_name: leagueDetails.organizer_name || 'FACEIT',
-        type: 'league',
-        season_start: seasonDetails.start_date,
-        season_end: seasonDetails.end_date
-      };
-
-      handleLeagueSelect(league);
-      setShowDropdown(false);
-    } catch (err) {
-      console.error('Failed to load league from URL:', err);
-      setUrlError(`Failed to load league. Error: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  }, [hubUrl, api, handleLeagueSelect]);
-
-  return (
-    <div className="league-selector">
-      <label>Filter by League/Hub:</label>
-
-      {/* URL Input Method */}
-      <div className="hub-url-input">
-        <input
-          type="text"
-          placeholder="Paste FACEIT league URL (e.g., faceit.com/en/cs2/league/...)"
-          value={hubUrl}
-          onChange={(e) => {
-            setHubUrl(e.target.value);
-            setUrlError('');
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleUrlSubmit();
-          }}
-        />
-        <button
-          className="url-submit-btn"
-          onClick={handleUrlSubmit}
-          disabled={!hubUrl.trim() || loading}
-        >
-          {loading ? '...' : 'Load'}
-        </button>
-      </div>
-      {urlError && <div className="url-error">{urlError}</div>}
-
-      <div className="or-divider">
-        <span>OR</span>
-      </div>
-
-      <div className="league-dropdown-wrapper">
-        <button
-          className="league-select-btn"
-          onClick={() => setShowDropdown(!showDropdown)}
-        >
-          {selectedLeague ? selectedLeague.name : 'All Teams'}
-          <span className="dropdown-arrow">{showDropdown ? '▲' : '▼'}</span>
-        </button>
-        {showDropdown && (
-          <div className="league-dropdown">
-            <div
-              className="league-option"
-              onClick={() => {
-                handleLeagueSelect(null);
-                setShowDropdown(false);
-              }}
-            >
-              <strong>All Teams</strong>
-              <span className="league-desc">No league filter</span>
-            </div>
-            {loading ? (
-              <div className="league-loading">Loading leagues...</div>
-            ) : leagues.length > 0 ? (
-              leagues.map(league => (
-                <div
-                  key={league.championship_id}
-                  className="league-option"
-                  onClick={() => {
-                    handleLeagueSelect(league);
-                    setShowDropdown(false);
-                  }}
-                >
-                  <strong>{league.name}</strong>
-                  <span className="league-desc">{league.organizer_name || 'FACEIT'}</span>
-                </div>
-              ))
-            ) : (
-              <div className="league-empty">No leagues available</div>
-            )}
-          </div>
-        )}
-      </div>
-      {selectedLeague && (
-        <div className="season-filter-info">
-          <span className="filter-icon">📅</span>
-          <span>Showing current season matches only</span>
-        </div>
-      )}
-    </div>
-  );
-};
 
 // ============================================================================
 // MAIN APP COMPONENT
@@ -1446,9 +1361,50 @@ export default function FACEITTeamCompare() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [vetoFormat, setVetoFormat] = useState('BO3'); // 'BO1' or 'BO3'
-  const [selectedLeague, setSelectedLeague] = useState(null); // For filtering teams by league
-  const [seasonFilterEnabled, setSeasonFilterEnabled] = useState(true); // Filter matches by current season
-  const [seasonStartDate, setSeasonStartDate] = useState(null); // Auto-detected or manual
+  const [viewMode, setViewMode] = useState('single'); // 'compare' or 'single' - default to single
+
+  // Load cached teams from localStorage on mount
+  useEffect(() => {
+    try {
+      const cachedTeamA = localStorage.getItem('faceit_team_a');
+      const cachedTeamB = localStorage.getItem('faceit_team_b');
+      const cachedViewMode = localStorage.getItem('faceit_view_mode');
+
+      if (cachedTeamA) {
+        setTeamA(JSON.parse(cachedTeamA));
+      }
+      if (cachedTeamB) {
+        setTeamB(JSON.parse(cachedTeamB));
+      }
+      if (cachedViewMode) {
+        setViewMode(cachedViewMode);
+      }
+    } catch (err) {
+      console.warn('Failed to load cached teams:', err);
+    }
+  }, []);
+
+  // Cache teams to localStorage when they change
+  useEffect(() => {
+    if (teamA) {
+      localStorage.setItem('faceit_team_a', JSON.stringify(teamA));
+    } else {
+      localStorage.removeItem('faceit_team_a');
+    }
+  }, [teamA]);
+
+  useEffect(() => {
+    if (teamB) {
+      localStorage.setItem('faceit_team_b', JSON.stringify(teamB));
+    } else {
+      localStorage.removeItem('faceit_team_b');
+    }
+  }, [teamB]);
+
+  // Cache view mode to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('faceit_view_mode', viewMode);
+  }, [viewMode]);
 
   // Verify API key
   const handleVerifyApiKey = useCallback(async (key) => {
@@ -1529,6 +1485,107 @@ export default function FACEITTeamCompare() {
       });
 
       const fullTeamData = transformTeamData(teamDetails, teamStats, memberStats);
+
+      // Fetch match history for the team leader to get recent matches
+      try {
+        const leaderId = teamDetails.leader;
+        const matchHistory = await api.getPlayerHistory(leaderId, 100); // Fetch more to ensure we get 6 months
+
+        // Filter matches from last 6 months
+        const sixMonthsAgo = Date.now() - (6 * 30 * 24 * 60 * 60 * 1000);
+        const recentMatches = (matchHistory.items || []).filter(match =>
+          (match.started_at * 1000) >= sixMonthsAgo
+        );
+
+        // Fetch match details for each match to get the map information
+        const matchDetailsPromises = recentMatches.map(async (match) => {
+          try {
+            const matchStats = await api.getMatchStats(match.match_id);
+
+            // Find which team the leader played for
+            const leaderTeam = matchStats.teams?.find(t =>
+              t.roster?.some(p => p.player_id === leaderId)
+            );
+
+            if (!leaderTeam || !leaderTeam.roster) {
+              return null; // Skip if we can't find the team
+            }
+
+            // Only include matches where the team played as an official team (team_id matches)
+            // Skip pugs and non-team matches (which have team_id like "faction1" or null)
+            if (!leaderTeam.team_id ||
+                leaderTeam.team_id === 'faction1' ||
+                leaderTeam.team_id === 'faction2' ||
+                leaderTeam.team_id !== teamDetails.team_id) {
+              return null;
+            }
+
+            // Determine result from match history
+            const matchResult = match.results;
+            let result = 'L';
+            let score = 'N/A';
+
+            if (matchResult) {
+              // matchResult is an object with faction1/faction2 or team keys
+              const factions = matchResult.faction1 && matchResult.faction2
+                ? [matchResult.faction1, matchResult.faction2]
+                : [];
+
+              // Find which faction won
+              const winningFaction = factions.find(f => f.winner === true);
+              const losingFaction = factions.find(f => f.winner === false);
+
+              // Check if leader was in winning faction
+              if (winningFaction && winningFaction.roster) {
+                const isInWinningTeam = winningFaction.roster.some(p => p.player_id === leaderId);
+                result = isInWinningTeam ? 'W' : 'L';
+              }
+
+              // Get score
+              if (winningFaction && losingFaction) {
+                score = result === 'W'
+                  ? `${winningFaction.score || 0}-${losingFaction.score || 0}`
+                  : `${losingFaction.score || 0}-${winningFaction.score || 0}`;
+              }
+            }
+
+            // Get opponent from matchStats teams
+            let opponent = 'Unknown';
+            if (matchStats.teams && matchStats.teams.length === 2) {
+              const opponentTeam = matchStats.teams.find(t =>
+                !t.roster.some(p => p.player_id === leaderId)
+              );
+              opponent = opponentTeam?.team_stats?.Team || opponentTeam?.name || 'Unknown';
+            }
+
+            return {
+              matchId: match.match_id,
+              map: matchStats.rounds?.[0]?.round_stats?.Map || 'Unknown',
+              result,
+              score,
+              date: new Date(match.started_at * 1000).toLocaleDateString(),
+              opponent,
+            };
+          } catch (err) {
+            // Silently skip matches that return 404 or other errors
+            // This is common for very old matches or matches with no stats
+            return null;
+          }
+        });
+
+        const matchDetails = (await Promise.all(matchDetailsPromises)).filter(m => m !== null);
+
+        // Organize matches by map
+        matchDetails.forEach(match => {
+          const normalizedMap = MAP_DISPLAY_NAMES[match.map] || match.map;
+          if (fullTeamData.mapStats[normalizedMap]) {
+            fullTeamData.mapStats[normalizedMap].matches.push(match);
+          }
+        });
+      } catch (err) {
+        console.warn('Failed to fetch match history:', err);
+      }
+
       setTeam(fullTeamData);
     } catch (err) {
       console.error('Error fetching team data:', err);
@@ -1540,34 +1597,10 @@ export default function FACEITTeamCompare() {
     }
   }, [api]);
 
-  // Filter matches by season if league is selected
-  const filterMatchesBySeason = useCallback((matches) => {
-    if (!seasonFilterEnabled || !selectedLeague || !seasonStartDate) {
-      return matches; // No filtering
-    }
-
-    return matches.filter(match => {
-      const matchDate = new Date(match.date);
-      return matchDate >= seasonStartDate;
-    });
-  }, [seasonFilterEnabled, selectedLeague, seasonStartDate]);
-
-  // Apply season filter to teams
-  const filteredTeamA = useMemo(() => {
-    if (!teamA) return null;
-    return {
-      ...teamA,
-      recentMatches: filterMatchesBySeason(teamA.recentMatches || [])
-    };
-  }, [teamA, filterMatchesBySeason]);
-
-  const filteredTeamB = useMemo(() => {
-    if (!teamB) return null;
-    return {
-      ...teamB,
-      recentMatches: filterMatchesBySeason(teamB.recentMatches || [])
-    };
-  }, [teamB, filterMatchesBySeason]);
+  // League filtering is handled at the API level when fetching team rosters
+  // No need for client-side filtering anymore
+  const filteredTeamA = teamA;
+  const filteredTeamB = teamB;
 
   const vetoPrediction = useMemo(() => {
     if (filteredTeamA && filteredTeamB) {
@@ -1596,33 +1629,41 @@ export default function FACEITTeamCompare() {
           verificationStatus={apiKeyStatus}
         />
 
-        {api && (
-          <LeagueSelector
-            selectedLeague={selectedLeague}
-            onLeagueChange={setSelectedLeague}
-            onSeasonDateChange={setSeasonStartDate}
-            api={api}
-          />
-        )}
+        <div className="view-mode-toggle">
+          <button
+            className={`view-mode-btn ${viewMode === 'compare' ? 'active' : ''}`}
+            onClick={() => setViewMode('compare')}
+          >
+            Compare Teams
+          </button>
+          <button
+            className={`view-mode-btn ${viewMode === 'single' ? 'active' : ''}`}
+            onClick={() => setViewMode('single')}
+          >
+            Single Team
+          </button>
+        </div>
 
         <div className="header-selectors">
           <TeamSearch
-            label="Team A"
+            label={viewMode === 'single' ? 'Select Team' : 'Team A'}
             selectedTeam={teamA}
             onSelect={(team) => handleTeamSelect(team, setTeamA)}
-            excludeId={teamB?.id}
+            excludeId={viewMode === 'compare' ? teamB?.id : null}
             api={api}
-            selectedLeague={selectedLeague}
           />
-          <div className="vs-indicator">VS</div>
-          <TeamSearch
-            label="Team B"
-            selectedTeam={teamB}
-            onSelect={(team) => handleTeamSelect(team, setTeamB)}
-            excludeId={teamA?.id}
-            api={api}
-            selectedLeague={selectedLeague}
-          />
+          {viewMode === 'compare' && (
+            <>
+              <div className="vs-indicator">VS</div>
+              <TeamSearch
+                label="Team B"
+                selectedTeam={teamB}
+                onSelect={(team) => handleTeamSelect(team, setTeamB)}
+                excludeId={teamA?.id}
+                api={api}
+              />
+            </>
+          )}
         </div>
       </header>
 
@@ -1635,31 +1676,50 @@ export default function FACEITTeamCompare() {
 
       {loading ? (
         <LoadingSpinner />
-      ) : filteredTeamA && filteredTeamB ? (
+      ) : (viewMode === 'single' ? filteredTeamA : (filteredTeamA && filteredTeamB)) ? (
         <>
           <nav className="section-nav">
-            <button
-              className={activeSection === 'compare' ? 'active' : ''}
-              onClick={() => setActiveSection('compare')}
-            >
-              Team Comparison
-            </button>
-            <button 
-              className={activeSection === 'veto' ? 'active' : ''} 
-              onClick={() => setActiveSection('veto')}
-            >
-              Veto Prediction
-            </button>
-            <button 
-              className={activeSection === 'maps' ? 'active' : ''} 
-              onClick={() => setActiveSection('maps')}
-            >
-              Map Stats
-            </button>
+            {viewMode === 'compare' ? (
+              <>
+                <button
+                  className={activeSection === 'compare' ? 'active' : ''}
+                  onClick={() => setActiveSection('compare')}
+                >
+                  Team Comparison
+                </button>
+                <button
+                  className={activeSection === 'veto' ? 'active' : ''}
+                  onClick={() => setActiveSection('veto')}
+                >
+                  At a Glance
+                </button>
+                <button
+                  className={activeSection === 'maps' ? 'active' : ''}
+                  onClick={() => setActiveSection('maps')}
+                >
+                  Map Stats
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className={activeSection === 'compare' ? 'active' : ''}
+                  onClick={() => setActiveSection('compare')}
+                >
+                  Team Overview
+                </button>
+                <button
+                  className={activeSection === 'maps' ? 'active' : ''}
+                  onClick={() => setActiveSection('maps')}
+                >
+                  Map Stats
+                </button>
+              </>
+            )}
           </nav>
 
           <main className="main-content">
-            {activeSection === 'compare' && (
+            {activeSection === 'compare' && viewMode === 'compare' && (
               <section className="comparison-section">
                 <div className="teams-grid">
                   <TeamCard team={filteredTeamA} side="team-a" />
@@ -1668,35 +1728,93 @@ export default function FACEITTeamCompare() {
               </section>
             )}
 
-            {activeSection === 'veto' && vetoPrediction && (
-              <section className="veto-section">
+            {activeSection === 'compare' && viewMode === 'single' && (
+              <section className="single-team-section">
+                <TeamCard team={filteredTeamA} side="team-a" />
+              </section>
+            )}
+
+            {activeSection === 'veto' && viewMode === 'compare' && (
+              <section className="at-a-glance-section">
                 <div className="section-header">
-                  <div className="header-title-row">
-                    <div>
-                      <h2>Pick & Ban Visualizer</h2>
-                      <p>Based on team's weakest/strongest maps</p>
+                  <h2>At a Glance</h2>
+                  <p>Quick comparison of key team statistics</p>
+                </div>
+                <div className="glance-grid">
+                  <div className="glance-card">
+                    <h3>Overall Win Rate</h3>
+                    <div className="glance-comparison">
+                      <div className="glance-team team-a">
+                        <span className="team-tag">{filteredTeamA.tag}</span>
+                        <span className="glance-value">{filteredTeamA.record.winRate}%</span>
+                      </div>
+                      <div className="glance-vs">VS</div>
+                      <div className="glance-team team-b">
+                        <span className="team-tag">{filteredTeamB.tag}</span>
+                        <span className="glance-value">{filteredTeamB.record.winRate}%</span>
+                      </div>
                     </div>
-                    <div className="format-selector">
-                      <label>Match Format:</label>
-                      <div className="format-buttons">
-                        <button
-                          className={`format-btn ${vetoFormat === 'BO1' ? 'active' : ''}`}
-                          onClick={() => setVetoFormat('BO1')}
-                        >
-                          BO1
-                        </button>
-                        <button
-                          className={`format-btn ${vetoFormat === 'BO3' ? 'active' : ''}`}
-                          onClick={() => setVetoFormat('BO3')}
-                        >
-                          BO3
-                        </button>
+                    <div className="glance-bar">
+                      <div
+                        className="glance-fill team-a"
+                        style={{ width: `${(filteredTeamA.record.winRate / (filteredTeamA.record.winRate + filteredTeamB.record.winRate)) * 100}%` }}
+                      />
+                      <div
+                        className="glance-fill team-b"
+                        style={{ width: `${(filteredTeamB.record.winRate / (filteredTeamA.record.winRate + filteredTeamB.record.winRate)) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="glance-card">
+                    <h3>Total Matches</h3>
+                    <div className="glance-comparison">
+                      <div className="glance-team team-a">
+                        <span className="team-tag">{filteredTeamA.tag}</span>
+                        <span className="glance-value">{filteredTeamA.record.matches}</span>
+                      </div>
+                      <div className="glance-vs">VS</div>
+                      <div className="glance-team team-b">
+                        <span className="team-tag">{filteredTeamB.tag}</span>
+                        <span className="glance-value">{filteredTeamB.record.matches}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="glance-card">
+                    <h3>Team Average Rating</h3>
+                    <div className="glance-comparison">
+                      <div className="glance-team team-a">
+                        <span className="team-tag">{filteredTeamA.tag}</span>
+                        <span className="glance-value">
+                          {(filteredTeamA.roster.reduce((sum, p) => sum + p.rating, 0) / filteredTeamA.roster.length).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="glance-vs">VS</div>
+                      <div className="glance-team team-b">
+                        <span className="team-tag">{filteredTeamB.tag}</span>
+                        <span className="glance-value">
+                          {(filteredTeamB.roster.reduce((sum, p) => sum + p.rating, 0) / filteredTeamB.roster.length).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="glance-card">
+                    <h3>Maps Played</h3>
+                    <div className="glance-comparison">
+                      <div className="glance-team team-a">
+                        <span className="team-tag">{filteredTeamA.tag}</span>
+                        <span className="glance-value">{Object.keys(filteredTeamA.mapStats || {}).length}</span>
+                      </div>
+                      <div className="glance-vs">VS</div>
+                      <div className="glance-team team-b">
+                        <span className="team-tag">{filteredTeamB.tag}</span>
+                        <span className="glance-value">{Object.keys(filteredTeamB.mapStats || {}).length}</span>
                       </div>
                     </div>
                   </div>
                 </div>
-                <VetoTimeline vetoOrder={vetoPrediction.vetoOrder} teamA={filteredTeamA} teamB={filteredTeamB} />
-                <VetoPrediction prediction={vetoPrediction} teamA={filteredTeamA} teamB={filteredTeamB} />
               </section>
             )}
 
@@ -1706,7 +1824,11 @@ export default function FACEITTeamCompare() {
                   <h2>Map Stats Dashboard</h2>
                   <p>Detailed per-map performance analysis</p>
                 </div>
-                <MapStatsDashboard teamA={filteredTeamA} teamB={filteredTeamB} />
+                <MapStatsDashboard
+                  teamA={filteredTeamA}
+                  teamB={viewMode === 'compare' ? filteredTeamB : null}
+                  singleMode={viewMode === 'single'}
+                />
               </section>
             )}
           </main>
@@ -2185,6 +2307,39 @@ export default function FACEITTeamCompare() {
           color: var(--faceit-orange);
         }
 
+        /* View Mode Toggle */
+        .view-mode-toggle {
+          display: flex;
+          gap: 8px;
+          margin-bottom: 16px;
+        }
+
+        .view-mode-btn {
+          flex: 1;
+          font-family: 'Outfit', sans-serif;
+          font-size: 13px;
+          font-weight: 600;
+          padding: 10px 20px;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-sm);
+          color: var(--text-secondary);
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .view-mode-btn:hover {
+          background: var(--bg-hover);
+          border-color: var(--border-hover);
+          color: var(--text-primary);
+        }
+
+        .view-mode-btn.active {
+          background: var(--faceit-orange-dim);
+          border-color: var(--faceit-orange);
+          color: var(--faceit-orange);
+        }
+
         /* Team Search */
         .header-selectors {
           display: flex;
@@ -2461,6 +2616,122 @@ export default function FACEITTeamCompare() {
           .teams-grid {
             grid-template-columns: 1fr;
           }
+        }
+
+        /* Single Team Section */
+        .single-team-section {
+          max-width: 900px;
+          margin: 0 auto;
+        }
+
+        .single-team-section .team-card {
+          width: 100%;
+        }
+
+        /* At a Glance Section */
+        .at-a-glance-section {
+          padding: 32px;
+        }
+
+        .glance-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 24px;
+          max-width: 1200px;
+          margin: 0 auto;
+        }
+
+        @media (max-width: 900px) {
+          .glance-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        .glance-card {
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-lg);
+          padding: 24px;
+          box-shadow: var(--shadow-sm);
+        }
+
+        .glance-card h3 {
+          font-size: 14px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          color: var(--text-muted);
+          margin-bottom: 16px;
+          text-align: center;
+        }
+
+        .glance-comparison {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          margin-bottom: 12px;
+        }
+
+        .glance-team {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
+          flex: 1;
+        }
+
+        .glance-team .team-tag {
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 12px;
+          font-weight: 600;
+          padding: 4px 12px;
+          border-radius: var(--radius-sm);
+        }
+
+        .glance-team.team-a .team-tag {
+          background: var(--team-a-dim);
+          color: var(--team-a);
+        }
+
+        .glance-team.team-b .team-tag {
+          background: var(--team-b-dim);
+          color: var(--team-b);
+        }
+
+        .glance-value {
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 32px;
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+
+        .glance-vs {
+          font-family: 'Outfit', sans-serif;
+          font-size: 14px;
+          font-weight: 700;
+          color: var(--text-muted);
+          padding: 0 8px;
+        }
+
+        .glance-bar {
+          display: flex;
+          height: 8px;
+          border-radius: var(--radius-sm);
+          overflow: hidden;
+          background: var(--bg-tertiary);
+        }
+
+        .glance-fill {
+          transition: width 0.5s ease;
+        }
+
+        .glance-fill.team-a {
+          background: linear-gradient(90deg, var(--team-a), #ff8f8f);
+        }
+
+        .glance-fill.team-b {
+          background: linear-gradient(90deg, #7eddd6, var(--team-b));
         }
 
         /* Team Card */
@@ -3289,6 +3560,138 @@ export default function FACEITTeamCompare() {
 
         .wr-compare-bar .wr-fill.team-b {
           background: linear-gradient(135deg, #7eddd6 0%, var(--team-b) 100%);
+        }
+
+        /* Map Single View */
+        .map-single-view {
+          padding: 24px;
+        }
+
+        .map-single-view .map-team-stats {
+          max-width: 800px;
+          margin: 0 auto 24px;
+          padding: 24px;
+          background: var(--bg-secondary);
+          border-radius: var(--radius-md);
+        }
+
+        .map-single-view .stat-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 12px;
+        }
+
+        @media (max-width: 768px) {
+          .map-single-view .stat-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+
+        .map-matches-single {
+          max-width: 800px;
+          margin: 0 auto;
+          padding: 24px;
+          background: var(--bg-secondary);
+          border-radius: var(--radius-md);
+        }
+
+        .map-matches-single h3 {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary);
+          margin-bottom: 16px;
+          padding-bottom: 12px;
+          border-bottom: 1px solid var(--border-subtle);
+        }
+
+        /* Map Matches */
+        .map-matches-container {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
+          padding: 24px;
+          background: var(--bg-secondary);
+          border-top: 1px solid var(--border-subtle);
+        }
+
+        @media (max-width: 900px) {
+          .map-matches-container {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        .map-matches h3 {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary);
+          margin-bottom: 12px;
+          padding-bottom: 8px;
+          border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .match-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .match-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-sm);
+          font-size: 12px;
+          transition: all 0.2s ease;
+        }
+
+        .match-item:hover {
+          background: var(--bg-hover);
+          border-color: var(--border-hover);
+          transform: translateX(2px);
+        }
+
+        .match-opponent {
+          flex: 1;
+          color: var(--text-secondary);
+          font-weight: 500;
+        }
+
+        .match-date {
+          color: var(--text-muted);
+          font-size: 11px;
+        }
+
+        .match-link {
+          display: inline-flex;
+          align-items: center;
+          padding: 4px 10px;
+          background: var(--faceit-orange-dim);
+          color: var(--faceit-orange);
+          text-decoration: none;
+          border-radius: var(--radius-sm);
+          font-size: 11px;
+          font-weight: 600;
+          white-space: nowrap;
+          transition: all 0.2s ease;
+        }
+
+        .match-link:hover {
+          background: var(--faceit-orange);
+          color: #000;
+        }
+
+        .no-matches {
+          padding: 32px 16px;
+          text-align: center;
+          color: var(--text-muted);
+          font-size: 13px;
+          font-style: italic;
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-sm);
         }
 
         /* Empty State */
