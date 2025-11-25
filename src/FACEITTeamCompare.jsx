@@ -138,6 +138,46 @@ const createFaceitAPI = (apiKey) => {
       if (!response.ok) throw new Error('Failed to get hub stats');
       return response.json();
     },
+
+    // Get championships (leagues)
+    getChampionships: async (offset = 0, limit = 20) => {
+      const response = await fetch(
+        `${FACEIT_API_BASE}/championships?game=${GAME_ID}&offset=${offset}&limit=${limit}`,
+        { headers }
+      );
+      if (!response.ok) throw new Error('Failed to get championships');
+      return response.json();
+    },
+
+    // Get championship details
+    getChampionship: async (championshipId) => {
+      const response = await fetch(
+        `${FACEIT_API_BASE}/championships/${championshipId}`,
+        { headers }
+      );
+      if (!response.ok) throw new Error('Failed to get championship');
+      return response.json();
+    },
+
+    // Get teams in a championship
+    getChampionshipTeams: async (championshipId, offset = 0, limit = 50) => {
+      const response = await fetch(
+        `${FACEIT_API_BASE}/championships/${championshipId}/subscriptions?offset=${offset}&limit=${limit}`,
+        { headers }
+      );
+      if (!response.ok) throw new Error('Failed to get championship teams');
+      return response.json();
+    },
+
+    // Get match details
+    getMatch: async (matchId) => {
+      const response = await fetch(
+        `${FACEIT_API_BASE}/matches/${matchId}`,
+        { headers }
+      );
+      if (!response.ok) throw new Error('Failed to get match');
+      return response.json();
+    },
   };
 };
 
@@ -223,6 +263,10 @@ const transformTeamData = (teamDetails, teamStats, memberStats) => {
     roster,
     mapStats,
     recentMatches: [], // Populated separately from match history
+    vetoPatterns: {
+      firstBans: {}, // Map name -> count of times banned first
+      firstPicks: {}, // Map name -> count of times picked first
+    },
   };
 };
 
@@ -266,7 +310,7 @@ const transformPlayerStats = (playerData, statsData) => {
 // VETO PREDICTION LOGIC
 // ============================================================================
 
-const predictVeto = (teamA, teamB) => {
+const predictVeto = (teamA, teamB, format = 'BO3') => {
   const mapDiffs = ALL_MAPS.map(map => {
     const displayName = MAP_DISPLAY_NAMES[map] || map;
     return {
@@ -285,58 +329,139 @@ const predictVeto = (teamA, teamB) => {
   const teamABest = [...mapDiffs].sort((a, b) => b.teamAWr - a.teamAWr);
   const teamBBest = [...mapDiffs].sort((a, b) => b.teamBWr - a.teamBWr);
 
-  // Simulate BO3 veto
   const banned = new Set();
   const picked = [];
   const vetoOrder = [];
 
-  // Ban 1 - Team A bans worst map
-  const teamABan1 = teamAWorst.find(m => !banned.has(m.map));
-  if (teamABan1) {
-    banned.add(teamABan1.map);
-    vetoOrder.push({ team: 'A', action: 'ban', map: teamABan1.map, reason: `Lowest WR (${teamABan1.teamAWr}%)` });
-  }
+  // Helper: Get team's most common first ban from veto history
+  const getMostCommonFirstBan = (team, mapList) => {
+    if (team.vetoPatterns && Object.keys(team.vetoPatterns.firstBans).length > 0) {
+      const bans = team.vetoPatterns.firstBans;
+      const sortedBans = Object.entries(bans)
+        .sort((a, b) => b[1] - a[1])
+        .map(([map]) => map);
+      // Find first available map from their common bans
+      for (const mapName of sortedBans) {
+        const found = mapList.find(m => m.map === mapName && !banned.has(m.map));
+        if (found) return found;
+      }
+    }
+    // Fallback to worst map
+    return mapList.find(m => !banned.has(m.map));
+  };
 
-  // Ban 2 - Team B bans worst map
-  const teamBBan1 = teamBWorst.find(m => !banned.has(m.map));
-  if (teamBBan1) {
-    banned.add(teamBBan1.map);
-    vetoOrder.push({ team: 'B', action: 'ban', map: teamBBan1.map, reason: `Lowest WR (${teamBBan1.teamBWr}%)` });
-  }
+  if (format === 'BO1') {
+    // BO1 Format: Team A ban, Team B ban, Team A ban, Team B ban, Team A ban, Team B ban, Decider
+    // Ban 1 - Team A bans (use veto history if available)
+    const teamABan1 = getMostCommonFirstBan(teamA, teamAWorst);
+    if (teamABan1) {
+      const reason = teamA.vetoPatterns?.firstBans?.[teamABan1.map]
+        ? `Typical first ban (${teamA.vetoPatterns.firstBans[teamABan1.map]}x in history)`
+        : `Weakest map (${teamABan1.teamAWr}% WR)`;
+      banned.add(teamABan1.map);
+      vetoOrder.push({ team: 'A', action: 'ban', map: teamABan1.map, reason });
+    }
 
-  // Pick 1 - Team A picks best remaining
-  const teamAPick = teamABest.find(m => !banned.has(m.map) && !picked.includes(m.map));
-  if (teamAPick) {
-    picked.push(teamAPick.map);
-    vetoOrder.push({ team: 'A', action: 'pick', map: teamAPick.map, reason: `Highest WR (${teamAPick.teamAWr}%)` });
-  }
+    // Ban 2 - Team B bans (use veto history if available)
+    const teamBBan1 = getMostCommonFirstBan(teamB, teamBWorst);
+    if (teamBBan1) {
+      const reason = teamB.vetoPatterns?.firstBans?.[teamBBan1.map]
+        ? `Typical first ban (${teamB.vetoPatterns.firstBans[teamBBan1.map]}x in history)`
+        : `Weakest map (${teamBBan1.teamBWr}% WR)`;
+      banned.add(teamBBan1.map);
+      vetoOrder.push({ team: 'B', action: 'ban', map: teamBBan1.map, reason });
+    }
 
-  // Pick 2 - Team B picks best remaining
-  const teamBPick = teamBBest.find(m => !banned.has(m.map) && !picked.includes(m.map));
-  if (teamBPick) {
-    picked.push(teamBPick.map);
-    vetoOrder.push({ team: 'B', action: 'pick', map: teamBPick.map, reason: `Highest WR (${teamBPick.teamBWr}%)` });
-  }
+    // Ban 3 - Team A bans 2nd worst
+    const teamABan2 = teamAWorst.find(m => !banned.has(m.map));
+    if (teamABan2) {
+      banned.add(teamABan2.map);
+      vetoOrder.push({ team: 'A', action: 'ban', map: teamABan2.map, reason: `2nd weakest (${teamABan2.teamAWr}% WR)` });
+    }
 
-  // Ban 3 - Team A bans opponent's strength
-  const teamABan2 = teamBBest.find(m => !banned.has(m.map) && !picked.includes(m.map));
-  if (teamABan2) {
-    banned.add(teamABan2.map);
-    vetoOrder.push({ team: 'A', action: 'ban', map: teamABan2.map, reason: `Counter ${teamB.tag}'s ${teamABan2.teamBWr}% WR` });
-  }
+    // Ban 4 - Team B bans 2nd worst
+    const teamBBan2 = teamBWorst.find(m => !banned.has(m.map));
+    if (teamBBan2) {
+      banned.add(teamBBan2.map);
+      vetoOrder.push({ team: 'B', action: 'ban', map: teamBBan2.map, reason: `2nd weakest (${teamBBan2.teamBWr}% WR)` });
+    }
 
-  // Ban 4 - Team B bans opponent's strength
-  const teamBBan2 = teamABest.find(m => !banned.has(m.map) && !picked.includes(m.map));
-  if (teamBBan2) {
-    banned.add(teamBBan2.map);
-    vetoOrder.push({ team: 'B', action: 'ban', map: teamBBan2.map, reason: `Counter ${teamA.tag}'s ${teamBBan2.teamAWr}% WR` });
-  }
+    // Ban 5 - Team A bans opponent's best remaining
+    const teamABan3 = teamBBest.find(m => !banned.has(m.map));
+    if (teamABan3) {
+      banned.add(teamABan3.map);
+      vetoOrder.push({ team: 'A', action: 'ban', map: teamABan3.map, reason: `Counter ${teamB.tag}'s strength (${teamABan3.teamBWr}% WR)` });
+    }
 
-  // Decider
-  const deciderMap = mapDiffs.find(m => !banned.has(m.map) && !picked.includes(m.map));
-  if (deciderMap) {
-    vetoOrder.push({ team: 'D', action: 'decider', map: deciderMap.map, reason: 'Last remaining map' });
-    picked.push(deciderMap.map);
+    // Ban 6 - Team B bans opponent's best remaining
+    const teamBBan3 = teamABest.find(m => !banned.has(m.map));
+    if (teamBBan3) {
+      banned.add(teamBBan3.map);
+      vetoOrder.push({ team: 'B', action: 'ban', map: teamBBan3.map, reason: `Counter ${teamA.tag}'s strength (${teamBBan3.teamAWr}% WR)` });
+    }
+
+    // Decider - Last remaining map
+    const deciderMap = mapDiffs.find(m => !banned.has(m.map));
+    if (deciderMap) {
+      vetoOrder.push({ team: 'D', action: 'decider', map: deciderMap.map, reason: 'Last remaining map' });
+      picked.push(deciderMap.map);
+    }
+  } else {
+    // BO3 Format: Ban, Ban, Pick, Pick, Ban, Ban, Decider
+    // Ban 1 - Team A bans (use veto history if available)
+    const teamABan1 = getMostCommonFirstBan(teamA, teamAWorst);
+    if (teamABan1) {
+      const reason = teamA.vetoPatterns?.firstBans?.[teamABan1.map]
+        ? `Typical first ban (${teamA.vetoPatterns.firstBans[teamABan1.map]}x in history)`
+        : `Weakest map (${teamABan1.teamAWr}% WR)`;
+      banned.add(teamABan1.map);
+      vetoOrder.push({ team: 'A', action: 'ban', map: teamABan1.map, reason });
+    }
+
+    // Ban 2 - Team B bans (use veto history if available)
+    const teamBBan1 = getMostCommonFirstBan(teamB, teamBWorst);
+    if (teamBBan1) {
+      const reason = teamB.vetoPatterns?.firstBans?.[teamBBan1.map]
+        ? `Typical first ban (${teamB.vetoPatterns.firstBans[teamBBan1.map]}x in history)`
+        : `Weakest map (${teamBBan1.teamBWr}% WR)`;
+      banned.add(teamBBan1.map);
+      vetoOrder.push({ team: 'B', action: 'ban', map: teamBBan1.map, reason });
+    }
+
+    // Pick 1 - Team A picks best remaining
+    const teamAPick = teamABest.find(m => !banned.has(m.map) && !picked.includes(m.map));
+    if (teamAPick) {
+      picked.push(teamAPick.map);
+      vetoOrder.push({ team: 'A', action: 'pick', map: teamAPick.map, reason: `Best map (${teamAPick.teamAWr}% WR)` });
+    }
+
+    // Pick 2 - Team B picks best remaining
+    const teamBPick = teamBBest.find(m => !banned.has(m.map) && !picked.includes(m.map));
+    if (teamBPick) {
+      picked.push(teamBPick.map);
+      vetoOrder.push({ team: 'B', action: 'pick', map: teamBPick.map, reason: `Best map (${teamBPick.teamBWr}% WR)` });
+    }
+
+    // Ban 3 - Team A bans opponent's strength
+    const teamABan2 = teamBBest.find(m => !banned.has(m.map) && !picked.includes(m.map));
+    if (teamABan2) {
+      banned.add(teamABan2.map);
+      vetoOrder.push({ team: 'A', action: 'ban', map: teamABan2.map, reason: `Counter ${teamB.tag}'s strength (${teamABan2.teamBWr}% WR)` });
+    }
+
+    // Ban 4 - Team B bans opponent's strength
+    const teamBBan2 = teamABest.find(m => !banned.has(m.map) && !picked.includes(m.map));
+    if (teamBBan2) {
+      banned.add(teamBBan2.map);
+      vetoOrder.push({ team: 'B', action: 'ban', map: teamBBan2.map, reason: `Counter ${teamA.tag}'s strength (${teamBBan2.teamAWr}% WR)` });
+    }
+
+    // Decider
+    const deciderMap = mapDiffs.find(m => !banned.has(m.map) && !picked.includes(m.map));
+    if (deciderMap) {
+      vetoOrder.push({ team: 'D', action: 'decider', map: deciderMap.map, reason: 'Last remaining map' });
+      picked.push(deciderMap.map);
+    }
   }
 
   // High difference maps
@@ -349,10 +474,11 @@ const predictVeto = (teamA, teamB) => {
     vetoOrder,
     predictedPool: picked,
     highDiffMaps,
-    teamALikelyBan: teamABan1?.map,
-    teamBLikelyBan: teamBBan1?.map,
-    teamALikelyPick: teamAPick?.map,
-    teamBLikelyPick: teamBPick?.map,
+    format,
+    teamALikelyBan: vetoOrder.find(v => v.team === 'A' && v.action === 'ban')?.map,
+    teamBLikelyBan: vetoOrder.find(v => v.team === 'B' && v.action === 'ban')?.map,
+    teamALikelyPick: vetoOrder.find(v => v.team === 'A' && v.action === 'pick')?.map,
+    teamBLikelyPick: vetoOrder.find(v => v.team === 'B' && v.action === 'pick')?.map,
   };
 };
 
@@ -389,6 +515,10 @@ const SAMPLE_TEAMS = {
       { opponent: 'Storm Rising', result: 'W', score: '2-1', date: '2025-01-09' },
       { opponent: 'Cipher Squad', result: 'W', score: '2-0', date: '2025-01-06' },
     ],
+    vetoPatterns: {
+      firstBans: { 'Nuke': 8, 'Overpass': 3, 'Train': 2 }, // Ban Nuke 8 times as first ban, etc.
+      firstPicks: { 'Mirage': 7, 'Inferno': 4, 'Dust 2': 2 },
+    },
   },
   team_b: {
     id: 'sample_team_b',
@@ -418,6 +548,10 @@ const SAMPLE_TEAMS = {
       { opponent: 'Pulse Gaming', result: 'W', score: '2-1', date: '2025-01-08' },
       { opponent: 'Crimson Five', result: 'L', score: '1-2', date: '2025-01-05' },
     ],
+    vetoPatterns: {
+      firstBans: { 'Train': 6, 'Dust 2': 4, 'Mirage': 2 }, // Ban Train 6 times as first ban
+      firstPicks: { 'Inferno': 9, 'Nuke': 5, 'Overpass': 3 },
+    },
   },
 };
 
@@ -485,7 +619,7 @@ const LoadingSpinner = () => (
 );
 
 // Team Search Component
-const TeamSearch = ({ label, onSelect, selectedTeam, excludeId, api }) => {
+const TeamSearch = ({ label, onSelect, selectedTeam, excludeId, api, selectedLeague }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -500,15 +634,32 @@ const TeamSearch = ({ label, onSelect, selectedTeam, excludeId, api }) => {
 
     try {
       if (api) {
-        // Use real API when available
-        const response = await api.searchTeams(searchQuery, 20);
-        const teams = response.items || [];
-        setResults(teams.map(team => ({
-          id: team.team_id,
-          name: team.name,
-          tag: team.nickname,
-          avatar: team.avatar,
-        })));
+        // If league is selected, get teams from that league
+        if (selectedLeague) {
+          const leagueTeams = await api.getChampionshipTeams(selectedLeague.championship_id, 0, 100);
+          const teams = leagueTeams.items || [];
+          const filtered = teams.filter(item =>
+            item.team?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            item.team?.nickname?.toLowerCase().includes(searchQuery.toLowerCase())
+          );
+          setResults(filtered.map(item => ({
+            id: item.team.team_id,
+            name: item.team.name,
+            tag: item.team.nickname,
+            avatar: item.team.avatar,
+            league: selectedLeague.name,
+          })));
+        } else {
+          // Regular search across all teams
+          const response = await api.searchTeams(searchQuery, 20);
+          const teams = response.items || [];
+          setResults(teams.map(team => ({
+            id: team.team_id,
+            name: team.name,
+            tag: team.nickname,
+            avatar: team.avatar,
+          })));
+        }
       } else {
         // In demo mode, filter sample teams
         const filtered = Object.values(SAMPLE_TEAMS).filter(
@@ -523,7 +674,7 @@ const TeamSearch = ({ label, onSelect, selectedTeam, excludeId, api }) => {
     }
 
     setIsSearching(false);
-  }, [api]);
+  }, [api, selectedLeague]);
 
   useEffect(() => {
     const timeout = setTimeout(() => handleSearch(query), 300);
@@ -980,6 +1131,101 @@ const ApiKeyInput = ({ apiKey, setApiKey, onVerify, verificationStatus }) => {
   );
 };
 
+// League/Hub Selector Component
+const LeagueSelector = ({ selectedLeague, onLeagueChange, api, onSeasonDateChange }) => {
+  const [leagues, setLeagues] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  useEffect(() => {
+    if (api) {
+      setLoading(true);
+      api.getChampionships(0, 50)
+        .then(data => {
+          setLeagues(data.items || []);
+        })
+        .catch(err => {
+          console.error('Failed to load leagues:', err);
+          setLeagues([]);
+        })
+        .finally(() => setLoading(false));
+    }
+  }, [api]);
+
+  // When league is selected, fetch its details to get season start date
+  const handleLeagueSelect = useCallback(async (league) => {
+    onLeagueChange(league);
+    if (league && api) {
+      try {
+        const details = await api.getChampionship(league.championship_id);
+        // Extract season start date from championship details
+        const startDate = details.championship_start || details.subscription_start;
+        if (startDate) {
+          onSeasonDateChange(new Date(startDate * 1000)); // Convert Unix timestamp
+        }
+      } catch (err) {
+        console.error('Failed to get league details:', err);
+      }
+    } else {
+      onSeasonDateChange(null);
+    }
+  }, [api, onLeagueChange, onSeasonDateChange]);
+
+  return (
+    <div className="league-selector">
+      <label>Filter by League/Hub:</label>
+      <div className="league-dropdown-wrapper">
+        <button
+          className="league-select-btn"
+          onClick={() => setShowDropdown(!showDropdown)}
+        >
+          {selectedLeague ? selectedLeague.name : 'All Teams'}
+          <span className="dropdown-arrow">{showDropdown ? '▲' : '▼'}</span>
+        </button>
+        {showDropdown && (
+          <div className="league-dropdown">
+            <div
+              className="league-option"
+              onClick={() => {
+                handleLeagueSelect(null);
+                setShowDropdown(false);
+              }}
+            >
+              <strong>All Teams</strong>
+              <span className="league-desc">No league filter</span>
+            </div>
+            {loading ? (
+              <div className="league-loading">Loading leagues...</div>
+            ) : leagues.length > 0 ? (
+              leagues.map(league => (
+                <div
+                  key={league.championship_id}
+                  className="league-option"
+                  onClick={() => {
+                    handleLeagueSelect(league);
+                    setShowDropdown(false);
+                  }}
+                >
+                  <strong>{league.name}</strong>
+                  <span className="league-desc">{league.organizer_name || 'FACEIT'}</span>
+                </div>
+              ))
+            ) : (
+              <div className="league-empty">No leagues available</div>
+            )}
+          </div>
+        )}
+      </div>
+      {selectedLeague && (
+        <div className="season-filter-info">
+          <span className="filter-icon">📅</span>
+          <span>Showing current season matches only</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ============================================================================
 // MAIN APP COMPONENT
 // ============================================================================
@@ -992,6 +1238,10 @@ export default function FACEITTeamCompare() {
   const [activeSection, setActiveSection] = useState('compare');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [vetoFormat, setVetoFormat] = useState('BO3'); // 'BO1' or 'BO3'
+  const [selectedLeague, setSelectedLeague] = useState(null); // For filtering teams by league
+  const [seasonFilterEnabled, setSeasonFilterEnabled] = useState(true); // Filter matches by current season
+  const [seasonStartDate, setSeasonStartDate] = useState(null); // Auto-detected or manual
 
   // Verify API key
   const handleVerifyApiKey = useCallback(async (key) => {
@@ -1083,12 +1333,41 @@ export default function FACEITTeamCompare() {
     }
   }, [api]);
 
+  // Filter matches by season if league is selected
+  const filterMatchesBySeason = useCallback((matches) => {
+    if (!seasonFilterEnabled || !selectedLeague || !seasonStartDate) {
+      return matches; // No filtering
+    }
+
+    return matches.filter(match => {
+      const matchDate = new Date(match.date);
+      return matchDate >= seasonStartDate;
+    });
+  }, [seasonFilterEnabled, selectedLeague, seasonStartDate]);
+
+  // Apply season filter to teams
+  const filteredTeamA = useMemo(() => {
+    if (!teamA) return null;
+    return {
+      ...teamA,
+      recentMatches: filterMatchesBySeason(teamA.recentMatches || [])
+    };
+  }, [teamA, filterMatchesBySeason]);
+
+  const filteredTeamB = useMemo(() => {
+    if (!teamB) return null;
+    return {
+      ...teamB,
+      recentMatches: filterMatchesBySeason(teamB.recentMatches || [])
+    };
+  }, [teamB, filterMatchesBySeason]);
+
   const vetoPrediction = useMemo(() => {
-    if (teamA && teamB) {
-      return predictVeto(teamA, teamB);
+    if (filteredTeamA && filteredTeamB) {
+      return predictVeto(filteredTeamA, filteredTeamB, vetoFormat);
     }
     return null;
-  }, [teamA, teamB]);
+  }, [filteredTeamA, filteredTeamB, vetoFormat]);
 
   return (
     <div className="app-container">
@@ -1103,13 +1382,22 @@ export default function FACEITTeamCompare() {
           <span className="brand-tag">CS2 Team Analytics</span>
         </div>
         
-        <ApiKeyInput 
-          apiKey={apiKey} 
-          setApiKey={setApiKey} 
+        <ApiKeyInput
+          apiKey={apiKey}
+          setApiKey={setApiKey}
           onVerify={handleVerifyApiKey}
           verificationStatus={apiKeyStatus}
         />
-        
+
+        {api && (
+          <LeagueSelector
+            selectedLeague={selectedLeague}
+            onLeagueChange={setSelectedLeague}
+            onSeasonDateChange={setSeasonStartDate}
+            api={api}
+          />
+        )}
+
         <div className="header-selectors">
           <TeamSearch
             label="Team A"
@@ -1117,6 +1405,7 @@ export default function FACEITTeamCompare() {
             onSelect={(team) => handleTeamSelect(team, setTeamA)}
             excludeId={teamB?.id}
             api={api}
+            selectedLeague={selectedLeague}
           />
           <div className="vs-indicator">VS</div>
           <TeamSearch
@@ -1125,6 +1414,7 @@ export default function FACEITTeamCompare() {
             onSelect={(team) => handleTeamSelect(team, setTeamB)}
             excludeId={teamA?.id}
             api={api}
+            selectedLeague={selectedLeague}
           />
         </div>
       </header>
@@ -1138,11 +1428,11 @@ export default function FACEITTeamCompare() {
 
       {loading ? (
         <LoadingSpinner />
-      ) : teamA && teamB ? (
+      ) : filteredTeamA && filteredTeamB ? (
         <>
           <nav className="section-nav">
-            <button 
-              className={activeSection === 'compare' ? 'active' : ''} 
+            <button
+              className={activeSection === 'compare' ? 'active' : ''}
               onClick={() => setActiveSection('compare')}
             >
               Team Comparison
@@ -1165,8 +1455,8 @@ export default function FACEITTeamCompare() {
             {activeSection === 'compare' && (
               <section className="comparison-section">
                 <div className="teams-grid">
-                  <TeamCard team={teamA} side="team-a" />
-                  <TeamCard team={teamB} side="team-b" />
+                  <TeamCard team={filteredTeamA} side="team-a" />
+                  <TeamCard team={filteredTeamB} side="team-b" />
                 </div>
               </section>
             )}
@@ -1174,11 +1464,32 @@ export default function FACEITTeamCompare() {
             {activeSection === 'veto' && vetoPrediction && (
               <section className="veto-section">
                 <div className="section-header">
-                  <h2>Pick & Ban Visualizer</h2>
-                  <p>Standard BO3 Format</p>
+                  <div className="header-title-row">
+                    <div>
+                      <h2>Pick & Ban Visualizer</h2>
+                      <p>Based on team's weakest/strongest maps</p>
+                    </div>
+                    <div className="format-selector">
+                      <label>Match Format:</label>
+                      <div className="format-buttons">
+                        <button
+                          className={`format-btn ${vetoFormat === 'BO1' ? 'active' : ''}`}
+                          onClick={() => setVetoFormat('BO1')}
+                        >
+                          BO1
+                        </button>
+                        <button
+                          className={`format-btn ${vetoFormat === 'BO3' ? 'active' : ''}`}
+                          onClick={() => setVetoFormat('BO3')}
+                        >
+                          BO3
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <VetoTimeline vetoOrder={vetoPrediction.vetoOrder} teamA={teamA} teamB={teamB} />
-                <VetoPrediction prediction={vetoPrediction} teamA={teamA} teamB={teamB} />
+                <VetoTimeline vetoOrder={vetoPrediction.vetoOrder} teamA={filteredTeamA} teamB={filteredTeamB} />
+                <VetoPrediction prediction={vetoPrediction} teamA={filteredTeamA} teamB={filteredTeamB} />
               </section>
             )}
 
@@ -1188,7 +1499,7 @@ export default function FACEITTeamCompare() {
                   <h2>Map Stats Dashboard</h2>
                   <p>Detailed per-map performance analysis</p>
                 </div>
-                <MapStatsDashboard teamA={teamA} teamB={teamB} />
+                <MapStatsDashboard teamA={filteredTeamA} teamB={filteredTeamB} />
               </section>
             )}
           </main>
@@ -1427,6 +1738,122 @@ export default function FACEITTeamCompare() {
         .status-badge.invalid {
           background: rgba(248, 113, 113, 0.15);
           color: var(--loss);
+        }
+
+        /* League Selector */
+        .league-selector {
+          background: var(--bg-tertiary);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-md);
+          padding: 16px;
+          margin-bottom: 20px;
+        }
+
+        .league-selector label {
+          display: block;
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--text-secondary);
+          margin-bottom: 8px;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+        }
+
+        .league-dropdown-wrapper {
+          position: relative;
+        }
+
+        .league-select-btn {
+          font-family: 'Outfit', sans-serif;
+          width: 100%;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 12px 16px;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-medium);
+          border-radius: var(--radius-sm);
+          color: var(--text-primary);
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .league-select-btn:hover {
+          border-color: var(--faceit-orange);
+          background: var(--bg-hover);
+        }
+
+        .dropdown-arrow {
+          font-size: 10px;
+          color: var(--text-muted);
+        }
+
+        .league-dropdown {
+          position: absolute;
+          top: calc(100% + 4px);
+          left: 0;
+          right: 0;
+          background: var(--bg-tertiary);
+          border: 1px solid var(--border-medium);
+          border-radius: var(--radius-md);
+          max-height: 300px;
+          overflow-y: auto;
+          z-index: 1000;
+          box-shadow: var(--shadow-lg);
+        }
+
+        .league-option {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          padding: 12px 16px;
+          cursor: pointer;
+          transition: background 0.2s;
+          border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .league-option:last-child {
+          border-bottom: none;
+        }
+
+        .league-option:hover {
+          background: var(--bg-hover);
+        }
+
+        .league-option strong {
+          font-size: 14px;
+          color: var(--text-primary);
+        }
+
+        .league-desc {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        .league-loading, .league-empty {
+          padding: 16px;
+          text-align: center;
+          color: var(--text-muted);
+          font-size: 13px;
+        }
+
+        .season-filter-info {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 12px;
+          padding: 8px 12px;
+          background: rgba(34, 197, 94, 0.1);
+          border: 1px solid rgba(34, 197, 94, 0.2);
+          border-radius: var(--radius-sm);
+          font-size: 12px;
+          color: var(--text-secondary);
+        }
+
+        .filter-icon {
+          font-size: 14px;
         }
 
         .error-notice {
@@ -1677,6 +2104,14 @@ export default function FACEITTeamCompare() {
           margin-bottom: 24px;
         }
 
+        .header-title-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          flex-wrap: wrap;
+          gap: 16px;
+        }
+
         .section-header h2 {
           font-size: 20px;
           font-weight: 700;
@@ -1686,6 +2121,53 @@ export default function FACEITTeamCompare() {
         .section-header p {
           font-size: 13px;
           color: var(--text-muted);
+        }
+
+        .format-selector {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .format-selector label {
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--text-secondary);
+          text-transform: uppercase;
+          letter-spacing: 1px;
+        }
+
+        .format-buttons {
+          display: flex;
+          gap: 6px;
+          background: var(--bg-tertiary);
+          padding: 4px;
+          border-radius: var(--radius-sm);
+          border: 1px solid var(--border-subtle);
+        }
+
+        .format-btn {
+          font-family: 'Outfit', sans-serif;
+          font-size: 12px;
+          font-weight: 600;
+          padding: 6px 16px;
+          background: transparent;
+          border: none;
+          border-radius: 4px;
+          color: var(--text-secondary);
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .format-btn:hover {
+          color: var(--text-primary);
+          background: var(--bg-hover);
+        }
+
+        .format-btn.active {
+          background: var(--faceit-orange);
+          color: white;
+          box-shadow: 0 2px 8px var(--faceit-orange-glow);
         }
 
         /* Teams Grid */
