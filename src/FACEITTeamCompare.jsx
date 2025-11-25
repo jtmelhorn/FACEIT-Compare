@@ -163,10 +163,30 @@ const createFaceitAPI = (apiKey) => {
       return response.json();
     },
 
-    // Get league season/division roster (teams in specific conference/division)
-    getLeagueSeasonRoster: async (hubId, seasonId, offset = 0, limit = 100) => {
+    // Get league by ID
+    getLeague: async (leagueId) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/leaderboards/hubs/${hubId}/seasons/${seasonId}?offset=${offset}&limit=${limit}`,
+        `${FACEIT_API_BASE}/leagues/${leagueId}`,
+        { headers }
+      );
+      if (!response.ok) throw new Error('Failed to get league');
+      return response.json();
+    },
+
+    // Get league season details
+    getLeagueSeason: async (leagueId, seasonId) => {
+      const response = await fetch(
+        `${FACEIT_API_BASE}/leagues/${leagueId}/seasons/${seasonId}`,
+        { headers }
+      );
+      if (!response.ok) throw new Error('Failed to get league season');
+      return response.json();
+    },
+
+    // Get teams in a league season (leaderboard)
+    getLeagueSeasonRoster: async (leagueId, seasonId, offset = 0, limit = 100) => {
+      const response = await fetch(
+        `${FACEIT_API_BASE}/leaderboards/leagues/${leagueId}/seasons/${seasonId}?offset=${offset}&limit=${limit}`,
         { headers }
       );
       if (!response.ok) throw new Error('Failed to get league season roster');
@@ -672,17 +692,19 @@ const TeamSearch = ({ label, onSelect, selectedTeam, excludeId, api, selectedLea
         if (selectedLeague) {
           let teams = [];
 
-          // Handle hub leagues (with season/division)
-          if (selectedLeague.hub_id && selectedLeague.season_id) {
-            const leagueData = await api.getLeagueSeasonRoster(selectedLeague.hub_id, selectedLeague.season_id, 0, 100);
-            const items = leagueData.items || [];
+          // Handle leagues (with season/division)
+          if (selectedLeague.league_id && selectedLeague.season_id) {
+            const leagueData = await api.getLeagueSeasonRoster(selectedLeague.league_id, selectedLeague.season_id, 0, 200);
+            const items = leagueData.items || leagueData.leaderboard || [];
+
             teams = items.map(item => ({
-              id: item.player?.player_id || item.team_id,
-              name: item.player?.nickname || item.team_name || 'Unknown',
-              tag: item.player?.nickname || item.team_name || 'Unknown',
-              avatar: item.player?.avatar || '',
+              // League leaderboards can have players or teams
+              id: item.player?.player_id || item.team?.team_id || item.team_id || item.player_id,
+              name: item.player?.nickname || item.team?.name || item.team_name || item.player_name || 'Unknown',
+              tag: item.player?.nickname || item.team?.nickname || item.team_name || item.player_name || 'Unknown',
+              avatar: item.player?.avatar || item.team?.avatar || '',
               league: selectedLeague.name,
-              isPlayer: !!item.player, // Flag to indicate if this is a player, not team
+              ranking: item.position || item.rank,
             }));
           }
           // Handle championship/tournament
@@ -1184,14 +1206,15 @@ const ApiKeyInput = ({ apiKey, setApiKey, onVerify, verificationStatus }) => {
   );
 };
 
-// Parse league URL to extract hub ID and season ID
+// Parse league URL to extract league ID and season ID
 const parseLeagueUrl = (url) => {
   // Example: https://www.faceit.com/en/cs2/league/ESEA%20League/a14b8616-45b9-4581-8637-4dfd0b5f6af8/10474798-c048-43ff-b662-fe27250a29d6/overview
+  // Pattern: /league/{name}/{leagueId}/{seasonId}/...
   const match = url.match(/\/league\/[^\/]+\/([a-f0-9-]+)\/([a-f0-9-]+)/i);
   if (match) {
     return {
-      hubId: match[1],
-      seasonId: match[2]
+      leagueId: match[1],  // First UUID is league ID
+      seasonId: match[2]   // Second UUID is season/conference ID
     };
   }
   return null;
@@ -1265,23 +1288,26 @@ const LeagueSelector = ({ selectedLeague, onLeagueChange, api, onSeasonDateChang
     setLoading(true);
 
     try {
-      // Fetch hub details
-      const hubDetails = await api.getHub(parsed.hubId);
+      // Fetch league details using correct API
+      const leagueDetails = await api.getLeague(parsed.leagueId);
+      const seasonDetails = await api.getLeagueSeason(parsed.leagueId, parsed.seasonId);
 
       // Create league object
       const league = {
-        hub_id: parsed.hubId,
+        league_id: parsed.leagueId,
         season_id: parsed.seasonId,
-        name: hubDetails.name || 'Custom League',
-        organizer_name: hubDetails.organizer_name || 'FACEIT',
-        type: 'hub'
+        name: `${leagueDetails.name || 'League'} - ${seasonDetails.name || 'Season'}`,
+        organizer_name: leagueDetails.organizer_name || 'FACEIT',
+        type: 'league',
+        season_start: seasonDetails.start_date,
+        season_end: seasonDetails.end_date
       };
 
       handleLeagueSelect(league);
       setShowDropdown(false);
     } catch (err) {
       console.error('Failed to load league from URL:', err);
-      setUrlError('Failed to load league. Check URL and API key.');
+      setUrlError(`Failed to load league. Error: ${err.message}`);
     } finally {
       setLoading(false);
     }
