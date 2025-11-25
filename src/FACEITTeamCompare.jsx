@@ -183,14 +183,50 @@ const createFaceitAPI = (apiKey) => {
       return response.json();
     },
 
-    // Get teams in a league season (leaderboard)
-    getLeagueSeasonRoster: async (leagueId, seasonId, offset = 0, limit = 100) => {
+    // Get leaderboard by ID
+    getLeaderboard: async (leaderboardId, offset = 0, limit = 100) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/leaderboards/leagues/${leagueId}/seasons/${seasonId}?offset=${offset}&limit=${limit}`,
+        `${FACEIT_API_BASE}/leaderboards/${leaderboardId}?offset=${offset}&limit=${limit}`,
         { headers }
       );
-      if (!response.ok) throw new Error('Failed to get league season roster');
+      if (!response.ok) throw new Error('Failed to get leaderboard');
       return response.json();
+    },
+
+    // Get teams in a league season by first fetching season details to get leaderboard IDs
+    getLeagueSeasonRoster: async (leagueId, seasonId, offset = 0, limit = 100) => {
+      // First get the season details which contains leaderboard IDs in divisions
+      const seasonData = await this.getLeagueSeason(leagueId, seasonId);
+
+      // Extract leaderboard IDs from divisions
+      const leaderboardIds = [];
+      if (seasonData.divisions && Array.isArray(seasonData.divisions)) {
+        seasonData.divisions.forEach(division => {
+          if (division.leaderboards && Array.isArray(division.leaderboards)) {
+            leaderboardIds.push(...division.leaderboards);
+          }
+        });
+      }
+
+      // If no leaderboards found, return empty result
+      if (leaderboardIds.length === 0) {
+        return { items: [] };
+      }
+
+      // Fetch data from all leaderboards and combine
+      const allItems = [];
+      for (const leaderboardId of leaderboardIds) {
+        try {
+          const leaderboardData = await this.getLeaderboard(leaderboardId, offset, limit);
+          if (leaderboardData.items) {
+            allItems.push(...leaderboardData.items);
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch leaderboard ${leaderboardId}:`, err);
+        }
+      }
+
+      return { items: allItems };
     },
 
     // Get championships (tournaments - different from leagues)
