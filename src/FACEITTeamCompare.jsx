@@ -1501,7 +1501,14 @@ export default function FACEITTeamCompare() {
         // Fetch match details for each match to get the map information
         const matchDetailsPromises = recentMatches.map(async (match) => {
           try {
-            const matchStats = await api.getMatchStats(match.match_id);
+            // Fetch both stats and full details to get competition info
+            const [matchStats, matchFullDetails] = await Promise.all([
+              api.getMatchStats(match.match_id),
+              api.getMatch(match.match_id).catch(e => {
+                console.warn('Failed to get full match details:', match.match_id, e);
+                return null;
+              })
+            ]);
 
             // Find which team the leader played for
             const leaderTeam = matchStats.teams?.find(t =>
@@ -1559,6 +1566,18 @@ export default function FACEITTeamCompare() {
               opponent = opponentTeam?.team_stats?.Team || opponentTeam?.name || 'Unknown';
             }
 
+            // Use competition info from full details if available, otherwise fallback to history
+            const competitionId = matchFullDetails?.competition_id || match.competition_id;
+            const competitionName = matchFullDetails?.competition_name || match.competition_name;
+
+            // Debug log
+            console.log('Match processed:', {
+              id: match.match_id,
+              comp_id: competitionId,
+              comp_name: competitionName,
+              map: matchStats.rounds?.[0]?.round_stats?.Map
+            });
+
             return {
               matchId: match.match_id,
               map: matchStats.rounds?.[0]?.round_stats?.Map || 'Unknown',
@@ -1566,28 +1585,28 @@ export default function FACEITTeamCompare() {
               score,
               date: new Date(match.started_at * 1000).toLocaleDateString(),
               opponent,
-              competitionId: match.competition_id,
-              competitionName: match.competition_name,
+              competitionId: competitionId,
+              competitionName: competitionName || (competitionId ? `Competition ${competitionId}` : undefined),
             };
           } catch (err) {
-            // Silently skip matches that return 404 or other errors
-            // This is common for very old matches or matches with no stats
+            console.error('Error processing match:', match.match_id, err);
             return null;
           }
         });
 
         const matchDetails = (await Promise.all(matchDetailsPromises)).filter(m => m !== null);
+        console.log('Processed match details:', matchDetails);
 
         // Extract unique competitions
         const competitions = [];
         const seenCompetitions = new Set();
 
         matchDetails.forEach(match => {
-          if (match.competitionId && match.competitionName && !seenCompetitions.has(match.competitionId)) {
+          if (match.competitionId && !seenCompetitions.has(match.competitionId)) {
             seenCompetitions.add(match.competitionId);
             competitions.push({
               id: match.competitionId,
-              name: match.competitionName
+              name: match.competitionName || match.competitionId
             });
           }
         });
