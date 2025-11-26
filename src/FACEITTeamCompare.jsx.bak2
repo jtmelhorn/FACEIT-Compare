@@ -514,14 +514,14 @@ const predictVeto = (teamA, teamB, format = 'BO3') => {
     const teamABan3 = teamBBest.find(m => !banned.has(m.map));
     if (teamABan3) {
       banned.add(teamABan3.map);
-      vetoOrder.push({ team: 'A', action: 'ban', map: teamABan3.map, reason: `Counter ${teamB.tag}'s strength (${teamABan3.teamBWr}% WR)` });
+      vetoOrder.push({ team: 'A', action: 'ban', map: teamABan3.map, reason: `Counter ${filteredTeamB.tag}'s strength (${teamABan3.teamBWr}% WR)` });
     }
 
     // Ban 6 - Team B bans opponent's best remaining
     const teamBBan3 = teamABest.find(m => !banned.has(m.map));
     if (teamBBan3) {
       banned.add(teamBBan3.map);
-      vetoOrder.push({ team: 'B', action: 'ban', map: teamBBan3.map, reason: `Counter ${teamA.tag}'s strength (${teamBBan3.teamAWr}% WR)` });
+      vetoOrder.push({ team: 'B', action: 'ban', map: teamBBan3.map, reason: `Counter ${filteredTeamA.tag}'s strength (${teamBBan3.teamAWr}% WR)` });
     }
 
     // Decider - Last remaining map
@@ -570,14 +570,14 @@ const predictVeto = (teamA, teamB, format = 'BO3') => {
     const teamABan2 = teamBBest.find(m => !banned.has(m.map) && !picked.includes(m.map));
     if (teamABan2) {
       banned.add(teamABan2.map);
-      vetoOrder.push({ team: 'A', action: 'ban', map: teamABan2.map, reason: `Counter ${teamB.tag}'s strength (${teamABan2.teamBWr}% WR)` });
+      vetoOrder.push({ team: 'A', action: 'ban', map: teamABan2.map, reason: `Counter ${filteredTeamB.tag}'s strength (${teamABan2.teamBWr}% WR)` });
     }
 
     // Ban 4 - Team B bans opponent's strength
     const teamBBan2 = teamABest.find(m => !banned.has(m.map) && !picked.includes(m.map));
     if (teamBBan2) {
       banned.add(teamBBan2.map);
-      vetoOrder.push({ team: 'B', action: 'ban', map: teamBBan2.map, reason: `Counter ${teamA.tag}'s strength (${teamBBan2.teamAWr}% WR)` });
+      vetoOrder.push({ team: 'B', action: 'ban', map: teamBBan2.map, reason: `Counter ${filteredTeamA.tag}'s strength (${teamBBan2.teamAWr}% WR)` });
     }
 
     // Decider
@@ -1053,7 +1053,7 @@ const MapStatsDashboard = ({ teamA, teamB, singleMode }) => {
 
           {/* Match List for Single Team */}
           <div className="map-matches-single">
-            <h3>{teamA.tag} Matches on {selectedMap}</h3>
+            <h3>{filteredTeamA.tag} Matches on {selectedMap}</h3>
             {mapDataA.matches && mapDataA.matches.length > 0 ? (
               <div className="match-list">
                 {mapDataA.matches.map((match, idx) => (
@@ -1083,7 +1083,7 @@ const MapStatsDashboard = ({ teamA, teamB, singleMode }) => {
           <div className="map-comparison">
             <div className="map-team-stats team-a-stats">
               <div className="map-team-header">
-                <span className="team-indicator team-a">{teamA.tag}</span>
+                <span className="team-indicator team-a">{filteredTeamA.tag}</span>
               </div>
               <div className="stat-grid">
                 <div className="stat-item">
@@ -1119,7 +1119,7 @@ const MapStatsDashboard = ({ teamA, teamB, singleMode }) => {
 
             <div className="map-team-stats team-b-stats">
               <div className="map-team-header">
-                <span className="team-indicator team-b">{teamB.tag}</span>
+                <span className="team-indicator team-b">{filteredTeamB.tag}</span>
               </div>
               <div className="stat-grid">
                 <div className="stat-item">
@@ -1137,7 +1137,7 @@ const MapStatsDashboard = ({ teamA, teamB, singleMode }) => {
           {/* Match Lists */}
           <div className="map-matches-container">
             <div className="map-matches team-a-matches">
-              <h3>{teamA.tag} Matches on {selectedMap}</h3>
+              <h3>{filteredTeamA.tag} Matches on {selectedMap}</h3>
               {mapDataA.matches && mapDataA.matches.length > 0 ? (
                 <div className="match-list">
                   {mapDataA.matches.map((match, idx) => (
@@ -1162,7 +1162,7 @@ const MapStatsDashboard = ({ teamA, teamB, singleMode }) => {
             </div>
 
             <div className="map-matches team-b-matches">
-              <h3>{teamB.tag} Matches on {selectedMap}</h3>
+              <h3>{filteredTeamB.tag} Matches on {selectedMap}</h3>
               {mapDataB.matches && mapDataB.matches.length > 0 ? (
                 <div className="match-list">
                   {mapDataB.matches.map((match, idx) => (
@@ -1298,7 +1298,6 @@ export default function FACEITTeamCompare() {
   const [vetoFormat, setVetoFormat] = useState('BO3'); // 'BO1' or 'BO3'
   const [viewMode, setViewMode] = useState('single'); // 'compare' or 'single' - default to single
   const [selectedSeason, setSelectedSeason] = useState('S55'); // Season filter
-  const [headerCollapsed, setHeaderCollapsed] = useState(false); // Collapsible header
 
   // Load cached teams from localStorage on mount
   useEffect(() => {
@@ -1491,59 +1490,30 @@ export default function FACEITTeamCompare() {
               return null;
             }
 
-            // Handle BO3/BO5 matches with detailed_results (multiple maps)
-            const detailedResults = matchData.detailed_results || [];
+            // Get results
+            const results = matchData.results || {};
+            const playerScore = results.score?.[playerFactionKey] || 0;
+            const opponentScore = results.score?.[playerFactionKey === 'faction1' ? 'faction2' : 'faction1'] || 0;
+            const result = results.winner === playerFactionKey ? 'W' : 'L';
             const opponent = opponentFaction.name || 'Unknown';
+
+            const score = `${playerScore}-${opponentScore}`;
             const matchTimestamp = matchData.started_at || matchData.finished_at || Date.now() / 1000;
-            const championship_name = matchData.competition_name || '';
 
-            // If detailed_results exists, create one entry per map
-            if (detailedResults.length > 0) {
-              return detailedResults.map(mapResult => {
-                const mapFactions = mapResult.factions || {};
-                const playerMapScore = mapFactions[playerFactionKey]?.score || 0;
-                const opponentMapScore = mapFactions[playerFactionKey === 'faction1' ? 'faction2' : 'faction1']?.score || 0;
-                const mapWinner = mapResult.winner;
-                const mapResult_WL = mapWinner === playerFactionKey ? 'W' : 'L';
+            // Get map name from voting data
+            const rawMap = matchData.voting?.map?.pick?.[0] ||
+                          matchData.voting?.map?.entities?.[0]?.name ||
+                          'Unknown';
 
-                // Try to get map name from various sources
-                const rawMap = mapResult.map ||
-                              matchData.voting?.map?.pick?.[0] ||
-                              matchData.voting?.map?.entities?.[0]?.name ||
-                              'Unknown';
-
-                return {
-                  matchId: `${matchId}-map${detailedResults.indexOf(mapResult)}`,
-                  map: rawMap,
-                  result: mapResult_WL,
-                  score: `${playerMapScore}-${opponentMapScore}`,
-                  date: new Date(matchTimestamp * 1000).toLocaleDateString(),
-                  opponent,
-                  championship_name,
-                  bo3MatchId: matchId, // Original match ID for reference
-                };
-              });
-            } else {
-              // Single map match (BO1) - use overall results
-              const results = matchData.results || {};
-              const playerScore = results.score?.[playerFactionKey] || 0;
-              const opponentScore = results.score?.[playerFactionKey === 'faction1' ? 'faction2' : 'faction1'] || 0;
-              const result = results.winner === playerFactionKey ? 'W' : 'L';
-
-              const rawMap = matchData.voting?.map?.pick?.[0] ||
-                            matchData.voting?.map?.entities?.[0]?.name ||
-                            'Unknown';
-
-              return {
-                matchId: matchId,
-                map: rawMap,
-                result,
-                score: `${playerScore}-${opponentScore}`,
-                date: new Date(matchTimestamp * 1000).toLocaleDateString(),
-                opponent,
-                championship_name,
-              };
-            }
+            return {
+              matchId: matchId,
+              map: rawMap,
+              result,
+              score,
+              date: new Date(matchTimestamp * 1000).toLocaleDateString(),
+              opponent,
+              championship_name: matchData.competition_name || '',
+            };
           } catch (err) {
             // Track error types
             if (err.status === 404) {
@@ -1556,10 +1526,7 @@ export default function FACEITTeamCompare() {
           }
         });
 
-        // Flatten results since BO3 matches return arrays, filter out nulls
-        const matchDetails = (await Promise.all(matchDetailsPromises))
-          .filter(m => m !== null)
-          .flat(); // Flatten arrays from BO3 matches
+        const matchDetails = (await Promise.all(matchDetailsPromises)).filter(m => m !== null);
         stats.filtered = stats.success - matchDetails.length;
 
         console.log('Match processing stats:', stats);
@@ -1671,33 +1638,23 @@ export default function FACEITTeamCompare() {
 
   return (
     <div className="app-container">
-      <header className={`app-header ${headerCollapsed ? 'collapsed' : ''}`}>
-        <div className="header-collapsible-content">
-          <div className="header-brand">
-            <div className="brand-icon">
-              <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-              </svg>
-            </div>
-            <h1>FACEIT Compare</h1>
-            <span className="brand-tag">CS2 Team Analytics</span>
+      <header className="app-header">
+        <div className="header-brand">
+          <div className="brand-icon">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+            </svg>
           </div>
-
-          <ApiKeyInput
-            apiKey={apiKey}
-            setApiKey={setApiKey}
-            onVerify={handleVerifyApiKey}
-            verificationStatus={apiKeyStatus}
-          />
+          <h1>FACEIT Compare</h1>
+          <span className="brand-tag">CS2 Team Analytics</span>
         </div>
 
-        <button
-          className="header-collapse-btn"
-          onClick={() => setHeaderCollapsed(!headerCollapsed)}
-          aria-label={headerCollapsed ? "Expand header" : "Collapse header"}
-        >
-          {headerCollapsed ? '▼' : '▲'}
-        </button>
+        <ApiKeyInput
+          apiKey={apiKey}
+          setApiKey={setApiKey}
+          onVerify={handleVerifyApiKey}
+          verificationStatus={apiKeyStatus}
+        />
 
         <div className="view-mode-toggle">
           <button
@@ -1928,6 +1885,15 @@ export default function FACEITTeamCompare() {
           <p>Search and select teams to begin analysis</p>
         </div>
       )}
+
+      <footer className="app-footer">
+        <p>Powered by FACEIT Data API</p>
+        <p className="footer-note">
+          <a href="https://docs.faceit.com/docs/data-api/" target="_blank" rel="noopener noreferrer">
+            API Documentation
+          </a>
+        </p>
+      </footer>
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
@@ -3838,35 +3804,30 @@ export default function FACEITTeamCompare() {
           color: var(--text-muted);
         }
 
-        /* Header Collapse Styles */
-        .header-collapse-btn {
-          position: absolute;
-          top: 8px;
-          right: 16px;
-          background: transparent;
-          border: none;
+        /* Footer */
+        .app-footer {
+          text-align: center;
+          padding: 24px 32px;
+          border-top: 1px solid var(--border-subtle);
+          background: var(--bg-secondary);
+        }
+
+        .app-footer p {
+          font-size: 12px;
           color: var(--text-muted);
-          font-size: 20px;
-          cursor: pointer;
-          padding: 4px 8px;
-          transition: color 0.2s;
         }
 
-        .header-collapse-btn:hover {
-          color: var(--text-primary);
+        .footer-note {
+          margin-top: 4px;
         }
 
-        .app-header.collapsed .header-collapsible-content {
-          display: none;
+        .footer-note a {
+          color: var(--faceit-orange);
+          text-decoration: none;
         }
 
-        .app-header {
-          position: relative;
-          transition: all 0.3s ease;
-        }
-
-        .app-header.collapsed {
-          padding: 12px 32px;
+        .footer-note a:hover {
+          text-decoration: underline;
         }
 
         /* Responsive */
