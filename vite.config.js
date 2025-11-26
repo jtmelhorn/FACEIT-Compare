@@ -11,5 +11,15 @@ export default defineConfig(({ command, mode }) => {
       assetsDir: 'assets',
       sourcemap: false,
     },
+    server: {
+      proxy: {
+        '/api/faceit': {
+          target: 'https://open.faceit.com/data/v4',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/faceit/, ''),
+          secure: false,
+        }
+      }
+    }
   }
 })

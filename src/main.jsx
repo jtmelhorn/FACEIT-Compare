@@ -1,9 +1,9 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import FACEITTeamCompare from './FACEITTeamCompare.jsx'
+import { App } from './App.jsx'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <FACEITTeamCompare />
+    <App />
   </React.StrictMode>,
 )

@@ -959,36 +959,11 @@ const VetoTimeline = ({ vetoOrder, teamA, teamB }) => (
 );
 
 // Veto Prediction Panel
-const VetoPrediction = ({ prediction, teamA, teamB, refreshTeamData, loading }) => (
+const VetoPrediction = ({ prediction, teamA, teamB }) => (
   <div className="veto-prediction">
     <div className="prediction-summary">
       <div className="prediction-card team-a">
-        <div className="pred-team-header">
-          <div className="pred-team">{teamA.tag}</div>
-          <button
-            className="refresh-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              refreshTeamData(teamA, true);
-            }}
-            title="Refresh team data"
-            disabled={loading}
-          >
-            {loading ? '...' : '↻'}
-          </button>
-        </div>
-        <div className="team-meta">
-          <div className="team-record">
-            <span className="record-label">Record</span>
-            <span className="record-value">{teamA.record.wins}W - {teamA.record.losses}L</span>
-          </div>
-          <div className="team-wr">
-            <span className="wr-label">Win Rate</span>
-            <span className={`wr-value ${teamA.record.winRate >= 50 ? 'good' : 'bad'}`}>
-              {teamA.record.winRate}%
-            </span>
-          </div>
-        </div>
+        <div className="pred-team">{filteredTeamA.tag}</div>
         <div className="pred-items">
           <div className="pred-item">
             <span className="pred-label">Likely Ban</span>
@@ -1004,32 +979,7 @@ const VetoPrediction = ({ prediction, teamA, teamB, refreshTeamData, loading }) 
       <div className="vs-badge">VS</div>
 
       <div className="prediction-card team-b">
-        <div className="pred-team-header">
-          <div className="pred-team">{teamB.tag}</div>
-          <button
-            className="refresh-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              refreshTeamData(teamB, false);
-            }}
-            title="Refresh team data"
-            disabled={loading}
-          >
-            {loading ? '...' : '↻'}
-          </button>
-        </div>
-        <div className="team-meta">
-          <div className="team-record">
-            <span className="record-label">Record</span>
-            <span className="record-value">{teamB.record.wins}W - {teamB.record.losses}L</span>
-          </div>
-          <div className="team-wr">
-            <span className="wr-label">Win Rate</span>
-            <span className={`wr-value ${teamB.record.winRate >= 50 ? 'good' : 'bad'}`}>
-              {teamB.record.winRate}%
-            </span>
-          </div>
-        </div>
+        <div className="pred-team">{filteredTeamB.tag}</div>
         <div className="pred-items">
           <div className="pred-item">
             <span className="pred-label">Likely Ban</span>
@@ -1052,14 +1002,14 @@ const VetoPrediction = ({ prediction, teamA, teamB, refreshTeamData, loading }) 
               <div className="diff-map-name">{m.map}</div>
               <div className="diff-bars">
                 <div className="diff-team">
-                  <span>{teamA.tag}</span>
+                  <span>{filteredTeamA.tag}</span>
                   <span className={m.teamAWr > m.teamBWr ? 'higher' : ''}>{m.teamAWr}%</span>
                 </div>
                 <div className="diff-indicator">
                   <span className="diff-value">Δ {m.diff}%</span>
                 </div>
                 <div className="diff-team">
-                  <span>{teamB.tag}</span>
+                  <span>{filteredTeamB.tag}</span>
                   <span className={m.teamBWr > m.teamAWr ? 'higher' : ''}>{m.teamBWr}%</span>
                 </div>
               </div>
@@ -1303,15 +1253,19 @@ const MapStatsDashboard = ({ teamA, teamB, singleMode }) => {
                         </a>
                       </div>
                       {match.vetoes && (match.vetoes.picks.length > 0 || match.vetoes.bans.length > 0) && (
-                        <div className="veto-section">
-                          <span className="veto-label">Picks:</span>
-                          <span className="veto-maps">{match.vetoes.picks.map(m => MAP_DISPLAY_NAMES[m] || m).join(', ')}</span>
-                        </div>
-                      )}
-                      {match.vetoes.bans.length > 0 && (
-                        <div className="veto-section">
-                          <span className="veto-label">Bans:</span>
-                          <span className="veto-maps">{match.vetoes.bans.map(m => MAP_DISPLAY_NAMES[m] || m).join(', ')}</span>
+                        <div className="match-vetoes">
+                          {match.vetoes.picks.length > 0 && (
+                            <div className="veto-section">
+                              <span className="veto-label">Picks:</span>
+                              <span className="veto-maps">{match.vetoes.picks.map(m => MAP_DISPLAY_NAMES[m] || m).join(', ')}</span>
+                            </div>
+                          )}
+                          {match.vetoes.bans.length > 0 && (
+                            <div className="veto-section">
+                              <span className="veto-label">Bans:</span>
+                              <span className="veto-maps">{match.vetoes.bans.map(m => MAP_DISPLAY_NAMES[m] || m).join(', ')}</span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1559,14 +1513,14 @@ export default function FACEITTeamCompare() {
   }, [apiKey]);
 
   // Handle team selection and fetch full team data
-  const handleTeamSelect = useCallback(async (team, setTeam, forceRefresh = false) => {
+  const handleTeamSelect = useCallback(async (team, setTeam) => {
     if (!team) {
       setTeam(null);
       return;
     }
 
     // If team is from sample data or already has full data, just set it
-    if (team.roster && team.mapStats && !forceRefresh) {
+    if (team.roster && team.mapStats) {
       setTeam(team);
       return;
     }
@@ -1574,7 +1528,7 @@ export default function FACEITTeamCompare() {
     // Check if we have cached team data (full team data, not just match data)
     try {
       const cachedTeam = localStorage.getItem(`team_full_${team.id}`);
-      if (cachedTeam && !forceRefresh) {
+      if (cachedTeam) {
         const { data, timestamp } = JSON.parse(cachedTeam);
         const age = Date.now() - timestamp;
 
@@ -1672,7 +1626,7 @@ export default function FACEITTeamCompare() {
 
           while (queue.length > 0) {
             const batch = queue.splice(0, maxConcurrent);
-            const batchResults = await Promise.all(batch.map(fn => fn())); // Execute functions in batch
+            const batchResults = await Promise.all(batch);
             results.push(...batchResults);
 
             // Small delay between batches to avoid rate limiting
@@ -1711,25 +1665,21 @@ export default function FACEITTeamCompare() {
               return null; // Skip if no teams found
             }
 
-            // Find which faction is our team by checking team name (case-insensitive)
-            // The season filter will handle additional filtering later
+            // Find which faction is our team based on team name
             let playerFaction = null;
             let opponentFaction = null;
             let playerFactionKey = null;
 
-            if (faction1.name && faction1.name.toLowerCase() === teamDetails.name.toLowerCase()) {
+            if (faction1.name === teamDetails.name) {
               playerFaction = faction1;
               opponentFaction = faction2;
               playerFactionKey = 'faction1';
-              console.log(`✅ Match ${matchId}: Team ${teamDetails.name} found as faction1`);
-            } else if (faction2.name && faction2.name.toLowerCase() === teamDetails.name.toLowerCase()) {
+            } else if (faction2.name === teamDetails.name) {
               playerFaction = faction2;
               opponentFaction = faction1;
               playerFactionKey = 'faction2';
-              console.log(`✅ Match ${matchId}: Team ${teamDetails.name} found as faction2`);
             } else {
-              // Team name doesn't match - this team didn't participate in this match
-              console.log(`❌ Match ${matchId}: Team not participant - faction1: "${faction1.name}", faction2: "${faction2.name}", looking for: "${teamDetails.name}"`);
+              // Team name doesn't match - this is a pug or individual match, skip it
               stats.filtered++;
               return null;
             }
@@ -1757,9 +1707,9 @@ export default function FACEITTeamCompare() {
 
                 // Get map name - in BO3, the pick array has one map per round
                 const rawMap = pickedMaps[index] ||
-                  mapResult.map ||
-                  matchData.voting?.map?.entities?.[index]?.name ||
-                  'Unknown';
+                              mapResult.map ||
+                              matchData.voting?.map?.entities?.[index]?.name ||
+                              'Unknown';
 
                 return {
                   matchId: matchId, // Use original match ID for FACEIT room link
@@ -1784,8 +1734,8 @@ export default function FACEITTeamCompare() {
               const result = results.winner === playerFactionKey ? 'W' : 'L';
 
               const rawMap = matchData.voting?.map?.pick?.[0] ||
-                matchData.voting?.map?.entities?.[0]?.name ||
-                'Unknown';
+                            matchData.voting?.map?.entities?.[0]?.name ||
+                            'Unknown';
 
               return {
                 matchId: matchId,
@@ -1852,12 +1802,7 @@ export default function FACEITTeamCompare() {
     } finally {
       setLoading(false);
     }
-  }, [api, getCachedMatchData, setCachedMatchData]);
-
-  const refreshTeamData = useCallback((teamToRefresh, isTeamA) => {
-    if (!teamToRefresh) return;
-    handleTeamSelect(teamToRefresh, isTeamA ? setTeamA : setTeamB, true);
-  }, [handleTeamSelect]);
+  }, [api]);
 
   // Filter team data by selected season and recalculate stats
   const filterBySeason = useCallback((teamData, season) => {
@@ -2069,13 +2014,7 @@ export default function FACEITTeamCompare() {
                   className={activeSection === 'compare' ? 'active' : ''}
                   onClick={() => setActiveSection('compare')}
                 >
-                  Team Details
-                </button>
-                <button
-                  className={activeSection === 'veto' ? 'active' : ''}
-                  onClick={() => setActiveSection('veto')}
-                >
-                  At a Glance
+                  Team Overview
                 </button>
                 <button
                   className={activeSection === 'maps' ? 'active' : ''}
@@ -2091,30 +2030,15 @@ export default function FACEITTeamCompare() {
             {activeSection === 'compare' && viewMode === 'compare' && (
               <section className="comparison-section">
                 <div className="teams-grid">
-                  <TeamCard
-                    team={filteredTeamA}
-                    side="team-a"
-                    onRefresh={() => refreshTeamData(filteredTeamA, true)}
-                    loading={loading}
-                  />
-                  <TeamCard
-                    team={filteredTeamB}
-                    side="team-b"
-                    onRefresh={() => refreshTeamData(filteredTeamB, false)}
-                    loading={loading}
-                  />
+                  <TeamCard team={filteredTeamA} side="team-a" />
+                  <TeamCard team={filteredTeamB} side="team-b" />
                 </div>
               </section>
             )}
 
             {activeSection === 'compare' && viewMode === 'single' && (
               <section className="single-team-section">
-                <TeamCard
-                  team={filteredTeamA}
-                  side="team-a"
-                  onRefresh={() => refreshTeamData(filteredTeamA, true)}
-                  loading={loading}
-                />
+                <TeamCard team={filteredTeamA} side="team-a" />
               </section>
             )}
 
@@ -2202,42 +2126,6 @@ export default function FACEITTeamCompare() {
               </section>
             )}
 
-            {activeSection === 'veto' && viewMode === 'compare' && (
-              <section className="veto-section">
-                <div className="section-header">
-                  <h2>Veto Prediction ({vetoFormat})</h2>
-                  <div className="veto-format-toggle">
-                    <button
-                      className={vetoFormat === 'BO1' ? 'active' : ''}
-                      onClick={() => setVetoFormat('BO1')}
-                    >
-                      BO1
-                    </button>
-                    <button
-                      className={vetoFormat === 'BO3' ? 'active' : ''}
-                      onClick={() => setVetoFormat('BO3')}
-                    >
-                      BO3
-                    </button>
-                  </div>
-                </div>
-                {vetoPrediction ? (
-                  <>
-                    <VetoPrediction
-                      prediction={vetoPrediction}
-                      teamA={filteredTeamA}
-                      teamB={filteredTeamB}
-                      refreshTeamData={(teamToRefresh, isTeamA) => refreshTeamData(teamToRefresh, isTeamA ? setTeamA : setTeamB)}
-                      loading={loading}
-                    />
-                    <VetoTimeline vetoOrder={vetoPrediction.vetoOrder} teamA={filteredTeamA} teamB={filteredTeamB} />
-                  </>
-                ) : (
-                  <div className="no-data">Not enough data to predict veto.</div>
-                )}
-              </section>
-            )}
-
             {activeSection === 'maps' && (
               <section className="maps-section">
                 <div className="section-header">
@@ -2246,7 +2134,7 @@ export default function FACEITTeamCompare() {
                 </div>
                 <MapStatsDashboard
                   teamA={filteredTeamA}
-                  teamB={viewMode === 'compare' ? filteredTeamB : null}
+                  teamB={viewMode === 'compare' ? teamB : null}
                   singleMode={viewMode === 'single'}
                 />
               </section>
@@ -2644,12 +2532,6 @@ export default function FACEITTeamCompare() {
           cursor: not-allowed;
         }
 
-        .team-name-row {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-
         .url-error {
           color: var(--loss);
           font-size: 12px;
@@ -2726,37 +2608,35 @@ export default function FACEITTeamCompare() {
 
         /* View Mode Toggle */
         .view-mode-toggle {
-          display: inline-flex;
-          background: var(--bg-secondary);
-          border: 1px solid var(--border-subtle);
-          border-radius: 20px;
-          padding: 3px;
+          display: flex;
+          gap: 8px;
           margin-bottom: 16px;
-          gap: 0;
         }
 
         .view-mode-btn {
+          flex: 1;
           font-family: 'Outfit', sans-serif;
-          font-size: 12px;
-          font-weight: 500;
-          padding: 6px 16px;
-          background: transparent;
-          border: none;
-          border-radius: 16px;
+          font-size: 13px;
+          font-weight: 600;
+          padding: 10px 20px;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-sm);
           color: var(--text-secondary);
           cursor: pointer;
           transition: all 0.2s ease;
-          white-space: nowrap;
         }
 
         .view-mode-btn:hover {
+          background: var(--bg-hover);
+          border-color: var(--border-hover);
           color: var(--text-primary);
         }
 
         .view-mode-btn.active {
-          background: var(--bg-card);
-          color: var(--text-primary);
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+          background: var(--faceit-orange-dim);
+          border-color: var(--faceit-orange);
+          color: var(--faceit-orange);
         }
 
         /* Team Search */
@@ -4157,11 +4037,9 @@ export default function FACEITTeamCompare() {
         }
 
         .season-selector label {
-          font-size: 11px;
-          font-weight: 400;
-          color: var(--text-secondary);
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
+          font-size: 14px;
+          font-weight: 500;
+          color: var(--text-primary);
         }
 
         .season-select {
