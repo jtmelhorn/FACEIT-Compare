@@ -454,6 +454,182 @@ const transformPlayerStats = (playerData, statsData) => {
 };
 
 // ============================================================================
+// VETO PREDICTION LOGIC
+// ============================================================================
+
+const predictVeto = (teamA, teamB, format = 'BO3') => {
+  const mapDiffs = ALL_MAPS.map(map => {
+    const displayName = MAP_DISPLAY_NAMES[map] || map;
+    return {
+      map: displayName,
+      mapKey: map,
+      teamAWr: teamA.mapStats[displayName]?.wr || teamA.mapStats[map]?.wr || 50,
+      teamBWr: teamB.mapStats[displayName]?.wr || teamB.mapStats[map]?.wr || 50,
+      teamAPlayed: teamA.mapStats[displayName]?.played || teamA.mapStats[map]?.played || 0,
+      teamBPlayed: teamB.mapStats[displayName]?.played || teamB.mapStats[map]?.played || 0,
+    };
+  });
+
+  // Sort by win rate for each team
+  const teamAWorst = [...mapDiffs].sort((a, b) => a.teamAWr - b.teamAWr);
+  const teamBWorst = [...mapDiffs].sort((a, b) => a.teamBWr - b.teamBWr);
+  const teamABest = [...mapDiffs].sort((a, b) => b.teamAWr - a.teamAWr);
+  const teamBBest = [...mapDiffs].sort((a, b) => b.teamBWr - a.teamBWr);
+
+  const banned = new Set();
+  const picked = [];
+  const vetoOrder = [];
+
+  // Helper: Get team's most common first ban from veto history
+  const getMostCommonFirstBan = (team, mapList) => {
+    if (team.vetoPatterns && Object.keys(team.vetoPatterns.firstBans).length > 0) {
+      const bans = team.vetoPatterns.firstBans;
+      const sortedBans = Object.entries(bans)
+        .sort((a, b) => b[1] - a[1])
+        .map(([map]) => map);
+      // Find first available map from their common bans
+      for (const mapName of sortedBans) {
+        const found = mapList.find(m => m.map === mapName && !banned.has(m.map));
+        if (found) return found;
+      }
+    }
+    // Fallback to worst map
+    return mapList.find(m => !banned.has(m.map));
+  };
+
+  if (format === 'BO1') {
+    // BO1 Format: Team A ban, Team B ban, Team A ban, Team B ban, Team A ban, Team B ban, Decider
+    // Ban 1 - Team A bans (use veto history if available)
+    const teamABan1 = getMostCommonFirstBan(teamA, teamAWorst);
+    if (teamABan1) {
+      const reason = teamA.vetoPatterns?.firstBans?.[teamABan1.map]
+        ? `Typical first ban (${teamA.vetoPatterns.firstBans[teamABan1.map]}x in history)`
+        : `Weakest map (${teamABan1.teamAWr}% WR)`;
+      banned.add(teamABan1.map);
+      vetoOrder.push({ team: 'A', action: 'ban', map: teamABan1.map, reason });
+    }
+
+    // Ban 2 - Team B bans (use veto history if available)
+    const teamBBan1 = getMostCommonFirstBan(teamB, teamBWorst);
+    if (teamBBan1) {
+      const reason = teamB.vetoPatterns?.firstBans?.[teamBBan1.map]
+        ? `Typical first ban (${teamB.vetoPatterns.firstBans[teamBBan1.map]}x in history)`
+        : `Weakest map (${teamBBan1.teamBWr}% WR)`;
+      banned.add(teamBBan1.map);
+      vetoOrder.push({ team: 'B', action: 'ban', map: teamBBan1.map, reason });
+    }
+
+    // Ban 3 - Team A bans 2nd worst
+    const teamABan2 = teamAWorst.find(m => !banned.has(m.map));
+    if (teamABan2) {
+      banned.add(teamABan2.map);
+      vetoOrder.push({ team: 'A', action: 'ban', map: teamABan2.map, reason: `2nd weakest (${teamABan2.teamAWr}% WR)` });
+    }
+
+    // Ban 4 - Team B bans 2nd worst
+    const teamBBan2 = teamBWorst.find(m => !banned.has(m.map));
+    if (teamBBan2) {
+      banned.add(teamBBan2.map);
+      vetoOrder.push({ team: 'B', action: 'ban', map: teamBBan2.map, reason: `2nd weakest (${teamBBan2.teamBWr}% WR)` });
+    }
+
+    // Ban 5 - Team A bans opponent's best remaining
+    const teamABan3 = teamBBest.find(m => !banned.has(m.map));
+    if (teamABan3) {
+      banned.add(teamABan3.map);
+      vetoOrder.push({ team: 'A', action: 'ban', map: teamABan3.map, reason: `Counter ${teamB.tag}'s strength (${teamABan3.teamBWr}% WR)` });
+    }
+
+    // Ban 6 - Team B bans opponent's best remaining
+    const teamBBan3 = teamABest.find(m => !banned.has(m.map));
+    if (teamBBan3) {
+      banned.add(teamBBan3.map);
+      vetoOrder.push({ team: 'B', action: 'ban', map: teamBBan3.map, reason: `Counter ${teamA.tag}'s strength (${teamBBan3.teamAWr}% WR)` });
+    }
+
+    // Decider - Last remaining map
+    const deciderMap = mapDiffs.find(m => !banned.has(m.map));
+    if (deciderMap) {
+      vetoOrder.push({ team: 'D', action: 'decider', map: deciderMap.map, reason: 'Last remaining map' });
+      picked.push(deciderMap.map);
+    }
+  } else {
+    // BO3 Format: Ban, Ban, Pick, Pick, Ban, Ban, Decider
+    // Ban 1 - Team A bans (use veto history if available)
+    const teamABan1 = getMostCommonFirstBan(teamA, teamAWorst);
+    if (teamABan1) {
+      const reason = teamA.vetoPatterns?.firstBans?.[teamABan1.map]
+        ? `Typical first ban (${teamA.vetoPatterns.firstBans[teamABan1.map]}x in history)`
+        : `Weakest map (${teamABan1.teamAWr}% WR)`;
+      banned.add(teamABan1.map);
+      vetoOrder.push({ team: 'A', action: 'ban', map: teamABan1.map, reason });
+    }
+
+    // Ban 2 - Team B bans (use veto history if available)
+    const teamBBan1 = getMostCommonFirstBan(teamB, teamBWorst);
+    if (teamBBan1) {
+      const reason = teamB.vetoPatterns?.firstBans?.[teamBBan1.map]
+        ? `Typical first ban (${teamB.vetoPatterns.firstBans[teamBBan1.map]}x in history)`
+        : `Weakest map (${teamBBan1.teamBWr}% WR)`;
+      banned.add(teamBBan1.map);
+      vetoOrder.push({ team: 'B', action: 'ban', map: teamBBan1.map, reason });
+    }
+
+    // Pick 1 - Team A picks best remaining
+    const teamAPick = teamABest.find(m => !banned.has(m.map) && !picked.includes(m.map));
+    if (teamAPick) {
+      picked.push(teamAPick.map);
+      vetoOrder.push({ team: 'A', action: 'pick', map: teamAPick.map, reason: `Best map (${teamAPick.teamAWr}% WR)` });
+    }
+
+    // Pick 2 - Team B picks best remaining
+    const teamBPick = teamBBest.find(m => !banned.has(m.map) && !picked.includes(m.map));
+    if (teamBPick) {
+      picked.push(teamBPick.map);
+      vetoOrder.push({ team: 'B', action: 'pick', map: teamBPick.map, reason: `Best map (${teamBPick.teamBWr}% WR)` });
+    }
+
+    // Ban 3 - Team A bans opponent's strength
+    const teamABan2 = teamBBest.find(m => !banned.has(m.map) && !picked.includes(m.map));
+    if (teamABan2) {
+      banned.add(teamABan2.map);
+      vetoOrder.push({ team: 'A', action: 'ban', map: teamABan2.map, reason: `Counter ${teamB.tag}'s strength (${teamABan2.teamBWr}% WR)` });
+    }
+
+    // Ban 4 - Team B bans opponent's strength
+    const teamBBan2 = teamABest.find(m => !banned.has(m.map) && !picked.includes(m.map));
+    if (teamBBan2) {
+      banned.add(teamBBan2.map);
+      vetoOrder.push({ team: 'B', action: 'ban', map: teamBBan2.map, reason: `Counter ${teamA.tag}'s strength (${teamBBan2.teamAWr}% WR)` });
+    }
+
+    // Decider
+    const deciderMap = mapDiffs.find(m => !banned.has(m.map) && !picked.includes(m.map));
+    if (deciderMap) {
+      vetoOrder.push({ team: 'D', action: 'decider', map: deciderMap.map, reason: 'Last remaining map' });
+      picked.push(deciderMap.map);
+    }
+  }
+
+  // High difference maps
+  const highDiffMaps = mapDiffs
+    .map(m => ({ ...m, diff: Math.abs(m.teamAWr - m.teamBWr) }))
+    .filter(m => m.diff >= 15)
+    .sort((a, b) => b.diff - a.diff);
+
+  return {
+    vetoOrder,
+    predictedPool: picked,
+    highDiffMaps,
+    format,
+    teamALikelyBan: vetoOrder.find(v => v.team === 'A' && v.action === 'ban')?.map,
+    teamBLikelyBan: vetoOrder.find(v => v.team === 'B' && v.action === 'ban')?.map,
+    teamALikelyPick: vetoOrder.find(v => v.team === 'A' && v.action === 'pick')?.map,
+    teamBLikelyPick: vetoOrder.find(v => v.team === 'B' && v.action === 'pick')?.map,
+  };
+};
+
+// ============================================================================
 // SAMPLE DATA (Used when API key not provided)
 // ============================================================================
 
@@ -711,12 +887,121 @@ const TeamCard = ({ team, side }) => {
   );
 };
 
+// Veto Timeline Component
+const VetoTimeline = ({ vetoOrder, teamA, teamB }) => (
+  <div className="veto-timeline">
+    <div className="timeline-track">
+      {vetoOrder.map((step, idx) => (
+        <Tooltip
+          key={idx}
+          content={
+            <div className="veto-tooltip">
+              <div className="veto-reason">{step.reason}</div>
+              {step.team !== 'D' && (
+                <div className="veto-team">
+                  {step.team === 'A' ? teamA.name : teamB.name}
+                </div>
+              )}
+            </div>
+          }
+        >
+          <div className={`timeline-step ${step.action} team-${step.team.toLowerCase()}`}>
+            <div className="step-number">{idx + 1}</div>
+            <div className="step-action">{step.action.toUpperCase()}</div>
+            <div className="step-map">{step.map}</div>
+            <div className="step-team">
+              {step.team === 'A' ? teamA.tag : step.team === 'B' ? teamB.tag : '?'}
+            </div>
+          </div>
+        </Tooltip>
+      ))}
+    </div>
+    <div className="timeline-legend">
+      <span className="legend-item ban">Ban</span>
+      <span className="legend-item pick">Pick</span>
+      <span className="legend-item decider">Decider</span>
+    </div>
+  </div>
+);
 
+// Veto Prediction Panel
+const VetoPrediction = ({ prediction, teamA, teamB }) => (
+  <div className="veto-prediction">
+    <div className="prediction-summary">
+      <div className="prediction-card team-a">
+        <div className="pred-team">{filteredTeamA.tag}</div>
+        <div className="pred-items">
+          <div className="pred-item">
+            <span className="pred-label">Likely Ban</span>
+            <span className="pred-map ban">{prediction.teamALikelyBan || 'N/A'}</span>
+          </div>
+          <div className="pred-item">
+            <span className="pred-label">Likely Pick</span>
+            <span className="pred-map pick">{prediction.teamALikelyPick || 'N/A'}</span>
+          </div>
+        </div>
+      </div>
 
+      <div className="vs-badge">VS</div>
 
+      <div className="prediction-card team-b">
+        <div className="pred-team">{filteredTeamB.tag}</div>
+        <div className="pred-items">
+          <div className="pred-item">
+            <span className="pred-label">Likely Ban</span>
+            <span className="pred-map ban">{prediction.teamBLikelyBan || 'N/A'}</span>
+          </div>
+          <div className="pred-item">
+            <span className="pred-label">Likely Pick</span>
+            <span className="pred-map pick">{prediction.teamBLikelyPick || 'N/A'}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {prediction.highDiffMaps && prediction.highDiffMaps.length > 0 && (
+      <div className="high-diff-section">
+        <div className="section-title">High Winrate Difference Maps (≥15%)</div>
+        <div className="high-diff-maps">
+          {prediction.highDiffMaps.map((m, idx) => (
+            <div key={idx} className="diff-map-card">
+              <div className="diff-map-name">{m.map}</div>
+              <div className="diff-bars">
+                <div className="diff-team">
+                  <span>{filteredTeamA.tag}</span>
+                  <span className={m.teamAWr > m.teamBWr ? 'higher' : ''}>{m.teamAWr}%</span>
+                </div>
+                <div className="diff-indicator">
+                  <span className="diff-value">Δ {m.diff}%</span>
+                </div>
+                <div className="diff-team">
+                  <span>{filteredTeamB.tag}</span>
+                  <span className={m.teamBWr > m.teamAWr ? 'higher' : ''}>{m.teamBWr}%</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    <div className="predicted-pool">
+      <div className="section-title">Predicted Map Pool</div>
+      <div className="pool-maps">
+        {prediction.predictedPool.map((map, idx) => (
+          <div key={map} className={`pool-map ${idx === 2 ? 'decider' : ''}`}>
+            <span className="pool-map-num">Map {idx + 1}</span>
+            <span className="pool-map-name">{map}</span>
+            {idx === 2 && <span className="pool-map-tag">Decider</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
 
 // Map Overview Panel Component
-const MapOverviewPanel = ({ teamA }) => {
+const MapOverviewPanel = ({ teamA, teamB, singleMode }) => {
   // Calculate map statistics
   const calculateMapStats = (mapStats) => {
     const maps = Object.entries(mapStats).filter(([_, data]) => data.played > 0);
@@ -734,33 +1019,95 @@ const MapOverviewPanel = ({ teamA }) => {
   };
 
   const statsA = calculateMapStats(teamA.mapStats);
+  const statsB = teamB ? calculateMapStats(teamB.mapStats) : null;
 
   return (
     <div className="map-overview-section">
       <h3>Map Win Rates (Current Pool)</h3>
       <div className="map-overview-grid">
-        {statsA && (
+        {singleMode ? (
+          // Single team view
+          statsA && (
+            <>
+              <div className="overview-card">
+                <span className="overview-label">Most Played</span>
+                <span className="overview-value">{statsA.mostPlayed.name}</span>
+                <span className="overview-subtext">{statsA.mostPlayed.count} matches</span>
+              </div>
+              <div className="overview-card">
+                <span className="overview-label">Least Played</span>
+                <span className="overview-value">{statsA.leastPlayed.name}</span>
+                <span className="overview-subtext">{statsA.leastPlayed.count} matches</span>
+              </div>
+              <div className="overview-card highlight-positive">
+                <span className="overview-label">Highest Win Rate</span>
+                <span className="overview-value">{statsA.highestWR.name}</span>
+                <span className="overview-subtext">{statsA.highestWR.wr}% ({statsA.highestWR.played} played)</span>
+              </div>
+              <div className="overview-card highlight-negative">
+                <span className="overview-label">Lowest Win Rate</span>
+                <span className="overview-value">{statsA.lowestWR.name}</span>
+                <span className="overview-subtext">{statsA.lowestWR.wr}% ({statsA.lowestWR.played} played)</span>
+              </div>
+            </>
+          )
+        ) : (
+          // Compare mode
           <>
-            <div className="overview-card">
-              <span className="overview-label">Most Played</span>
-              <span className="overview-value">{statsA.mostPlayed.name}</span>
-              <span className="overview-subtext">{statsA.mostPlayed.count} matches</span>
-            </div>
-            <div className="overview-card">
-              <span className="overview-label">Least Played</span>
-              <span className="overview-value">{statsA.leastPlayed.name}</span>
-              <span className="overview-subtext">{statsA.leastPlayed.count} matches</span>
-            </div>
-            <div className="overview-card highlight-positive">
-              <span className="overview-label">Highest Win Rate</span>
-              <span className="overview-value">{statsA.highestWR.name}</span>
-              <span className="overview-subtext">{statsA.highestWR.wr}% ({statsA.highestWR.played} played)</span>
-            </div>
-            <div className="overview-card highlight-negative">
-              <span className="overview-label">Lowest Win Rate</span>
-              <span className="overview-value">{statsA.lowestWR.name}</span>
-              <span className="overview-subtext">{statsA.lowestWR.wr}% ({statsA.lowestWR.played} played)</span>
-            </div>
+            {statsA && (
+              <div className="overview-team-section">
+                <h4 className="team-indicator team-a">{teamA.tag}</h4>
+                <div className="overview-team-grid">
+                  <div className="overview-card compact">
+                    <span className="overview-label">Most Played</span>
+                    <span className="overview-value-small">{statsA.mostPlayed.name}</span>
+                    <span className="overview-subtext-small">{statsA.mostPlayed.count}m</span>
+                  </div>
+                  <div className="overview-card compact">
+                    <span className="overview-label">Least Played</span>
+                    <span className="overview-value-small">{statsA.leastPlayed.name}</span>
+                    <span className="overview-subtext-small">{statsA.leastPlayed.count}m</span>
+                  </div>
+                  <div className="overview-card compact highlight-positive">
+                    <span className="overview-label">Best Map</span>
+                    <span className="overview-value-small">{statsA.highestWR.name}</span>
+                    <span className="overview-subtext-small">{statsA.highestWR.wr}%</span>
+                  </div>
+                  <div className="overview-card compact highlight-negative">
+                    <span className="overview-label">Worst Map</span>
+                    <span className="overview-value-small">{statsA.lowestWR.name}</span>
+                    <span className="overview-subtext-small">{statsA.lowestWR.wr}%</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            {statsB && (
+              <div className="overview-team-section">
+                <h4 className="team-indicator team-b">{teamB.tag}</h4>
+                <div className="overview-team-grid">
+                  <div className="overview-card compact">
+                    <span className="overview-label">Most Played</span>
+                    <span className="overview-value-small">{statsB.mostPlayed.name}</span>
+                    <span className="overview-subtext-small">{statsB.mostPlayed.count}m</span>
+                  </div>
+                  <div className="overview-card compact">
+                    <span className="overview-label">Least Played</span>
+                    <span className="overview-value-small">{statsB.leastPlayed.name}</span>
+                    <span className="overview-subtext-small">{statsB.leastPlayed.count}m</span>
+                  </div>
+                  <div className="overview-card compact highlight-positive">
+                    <span className="overview-label">Best Map</span>
+                    <span className="overview-value-small">{statsB.highestWR.name}</span>
+                    <span className="overview-subtext-small">{statsB.highestWR.wr}%</span>
+                  </div>
+                  <div className="overview-card compact highlight-negative">
+                    <span className="overview-label">Worst Map</span>
+                    <span className="overview-value-small">{statsB.lowestWR.name}</span>
+                    <span className="overview-subtext-small">{statsB.lowestWR.wr}%</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -769,7 +1116,7 @@ const MapOverviewPanel = ({ teamA }) => {
 };
 
 // Map Stats Dashboard
-const MapStatsDashboard = ({ teamA }) => {
+const MapStatsDashboard = ({ teamA, teamB, singleMode }) => {
   const [expandedMap, setExpandedMap] = useState(null);
 
   // Get all map entries for displaying win/loss bars
@@ -778,6 +1125,8 @@ const MapStatsDashboard = ({ teamA }) => {
 
   const mapEntriesA = Object.entries(teamA.mapStats || {})
     .filter(([mapName]) => currentPoolDisplayNames.includes(mapName));
+  const mapEntriesB = teamB ? Object.entries(teamB.mapStats || {})
+    .filter(([mapName]) => currentPoolDisplayNames.includes(mapName)) : [];
 
   const toggleMap = (mapName) => {
     setExpandedMap(expandedMap === mapName ? null : mapName);
@@ -788,53 +1137,158 @@ const MapStatsDashboard = ({ teamA }) => {
       {/* Map Win Rates Bar Graph Section */}
       <div className="map-winrates-section">
         <h3>Map Win Rates (Current Pool)</h3>
-        <div className="map-wr-list">
-          {mapEntriesA.length > 0 ? mapEntriesA.map(([mapName, stats]) => (
-            <div key={mapName} className="map-wr-item">
-              <div className="map-wr-clickable" onClick={() => toggleMap(mapName)}>
-                <WinRateBar
-                  wr={stats.wr || 0}
-                  label={mapName}
-                  teamColor="team-a"
-                  wins={stats.wins || 0}
-                  losses={stats.losses || 0}
-                  played={stats.played || 0}
-                />
-                <span className={`expand-icon ${expandedMap === mapName ? 'expanded' : ''}`}>
-                  {expandedMap === mapName ? '▼' : '▶'}
-                </span>
-              </div>
-              {expandedMap === mapName && (
-                <div className="map-matches-expanded">
-                  <h4>Matches on {mapName}</h4>
-                  {stats.matches && stats.matches.length > 0 ? (
-                    <div className="match-list">
-                      {stats.matches.map((match, idx) => (
-                        <div key={idx} className="match-item">
-                          <MatchResult result={match.result} score={match.score} />
-                          <span className="match-opponent">vs {match.opponent}</span>
-                          <span className="match-date">{match.date}</span>
-                          <a
-                            href={`https://www.faceit.com/en/cs2/room/${match.originalMatchId || match.matchId}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="match-link"
-                          >
-                            View Match ↗
-                          </a>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="no-matches">No match data available</p>
-                  )}
+        {singleMode ? (
+          <div className="map-wr-list">
+            {mapEntriesA.length > 0 ? mapEntriesA.map(([mapName, stats]) => (
+              <div key={mapName} className="map-wr-item">
+                <div className="map-wr-clickable" onClick={() => toggleMap(mapName)}>
+                  <WinRateBar
+                    wr={stats.wr || 0}
+                    label={mapName}
+                    teamColor="team-a"
+                    wins={stats.wins || 0}
+                    losses={stats.losses || 0}
+                    played={stats.played || 0}
+                  />
+                  <span className={`expand-icon ${expandedMap === mapName ? 'expanded' : ''}`}>
+                    {expandedMap === mapName ? '▼' : '▶'}
+                  </span>
                 </div>
-              )}
+                {expandedMap === mapName && (
+                  <div className="map-matches-expanded">
+                    <h4>Matches on {mapName}</h4>
+                    {stats.matches && stats.matches.length > 0 ? (
+                      <div className="match-list">
+                        {stats.matches.map((match, idx) => (
+                          <div key={idx} className="match-item">
+                            <MatchResult result={match.result} score={match.score} />
+                            <span className="match-opponent">vs {match.opponent}</span>
+                            <span className="match-date">{match.date}</span>
+                            <a
+                              href={`https://www.faceit.com/en/cs2/room/${match.originalMatchId || match.matchId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="match-link"
+                            >
+                              View Match ↗
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="no-matches">No match data available</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )) : (
+              <div className="no-data">No map data available</div>
+            )}
+          </div>
+        ) : (
+          <div className="map-wr-comparison">
+            <div className="map-wr-column">
+              <h4 className="team-indicator team-a">{teamA.tag}</h4>
+              <div className="map-wr-list">
+                {mapEntriesA.length > 0 ? mapEntriesA.map(([mapName, stats]) => (
+                  <div key={mapName} className="map-wr-item">
+                    <div className="map-wr-clickable" onClick={() => toggleMap(`${mapName}-a`)}>
+                      <WinRateBar
+                        wr={stats.wr || 0}
+                        label={mapName}
+                        teamColor="team-a"
+                        wins={stats.wins || 0}
+                        losses={stats.losses || 0}
+                        played={stats.played || 0}
+                      />
+                      <span className={`expand-icon ${expandedMap === `${mapName}-a` ? 'expanded' : ''}`}>
+                        {expandedMap === `${mapName}-a` ? '▼' : '▶'}
+                      </span>
+                    </div>
+                    {expandedMap === `${mapName}-a` && (
+                      <div className="map-matches-expanded">
+                        <h4>{teamA.tag} Matches on {mapName}</h4>
+                        {stats.matches && stats.matches.length > 0 ? (
+                          <div className="match-list">
+                            {stats.matches.map((match, idx) => (
+                              <div key={idx} className="match-item">
+                                <MatchResult result={match.result} score={match.score} />
+                                <span className="match-opponent">vs {match.opponent}</span>
+                                <span className="match-date">{match.date}</span>
+                                <a
+                                  href={`https://www.faceit.com/en/cs2/room/${match.originalMatchId || match.matchId}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="match-link"
+                                >
+                                  View Match ↗
+                                </a>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="no-matches">No match data available</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )) : (
+                  <div className="no-data">No map data available</div>
+                )}
+              </div>
             </div>
-          )) : (
-            <div className="no-data">No map data available</div>
-          )}
-        </div>
+            <div className="map-wr-column">
+              <h4 className="team-indicator team-b">{teamB.tag}</h4>
+              <div className="map-wr-list">
+                {mapEntriesB.length > 0 ? mapEntriesB.map(([mapName, stats]) => (
+                  <div key={mapName} className="map-wr-item">
+                    <div className="map-wr-clickable" onClick={() => toggleMap(`${mapName}-b`)}>
+                      <WinRateBar
+                        wr={stats.wr || 0}
+                        label={mapName}
+                        teamColor="team-b"
+                        wins={stats.wins || 0}
+                        losses={stats.losses || 0}
+                        played={stats.played || 0}
+                      />
+                      <span className={`expand-icon ${expandedMap === `${mapName}-b` ? 'expanded' : ''}`}>
+                        {expandedMap === `${mapName}-b` ? '▼' : '▶'}
+                      </span>
+                    </div>
+                    {expandedMap === `${mapName}-b` && (
+                      <div className="map-matches-expanded">
+                        <h4>{teamB.tag} Matches on {mapName}</h4>
+                        {stats.matches && stats.matches.length > 0 ? (
+                          <div className="match-list">
+                            {stats.matches.map((match, idx) => (
+                              <div key={idx} className="match-item">
+                                <MatchResult result={match.result} score={match.score} />
+                                <span className="match-opponent">vs {match.opponent}</span>
+                                <span className="match-date">{match.date}</span>
+                                <a
+                                  href={`https://www.faceit.com/en/cs2/room/${match.originalMatchId || match.matchId}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="match-link"
+                                >
+                                  View Match ↗
+                                </a>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="no-matches">No match data available</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )) : (
+                  <div className="no-data">No map data available</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -920,115 +1374,6 @@ const ApiKeyInput = ({ apiKey, setApiKey, onVerify, verificationStatus }) => {
 };
 
 
-// Veto Stats Component
-const VetoStats = ({ teamA, teamB }) => {
-  const getVetoStats = (team) => {
-    if (!team || !team.vetoStats) {
-      console.log('No veto stats found for team:', team?.name);
-      return null;
-    }
-
-    const { bans, picks, totalVetos } = team.vetoStats;
-    console.log('Veto data for', team.name, ':', { bans, picks, totalVetos });
-
-    // Check if we have any data
-    const hasBans = bans && Object.keys(bans).length > 0;
-    const hasPicks = picks && Object.keys(picks).length > 0;
-
-    if (!hasBans && !hasPicks) {
-      console.log('No bans or picks found for team:', team.name);
-      return null;
-    }
-
-    const sortedBans = hasBans ? Object.entries(bans).sort((a, b) => b[1] - a[1]) : [];
-    const sortedPicks = hasPicks ? Object.entries(picks).sort((a, b) => b[1] - a[1]) : [];
-
-    return {
-      mostVetoed: sortedBans[0] ? { map: sortedBans[0][0], count: sortedBans[0][1] } : null,
-      leastVetoed: sortedBans[sortedBans.length - 1] ? { map: sortedBans[sortedBans.length - 1][0], count: sortedBans[sortedBans.length - 1][1] } : null,
-      mostPicked: sortedPicks[0] ? { map: sortedPicks[0][0], count: sortedPicks[0][1] } : null,
-      totalVetos,
-      allBans: sortedBans,
-      allPicks: sortedPicks
-    };
-  };
-
-  const statsA = getVetoStats(teamA);
-  const statsB = teamB ? getVetoStats(teamB) : null;
-
-  const renderTeamStats = (stats, teamName) => {
-    if (!stats) {
-      return (
-        <div className="no-data">
-          <p>No veto data available for {teamName}</p>
-          <p style={{ fontSize: '12px', marginTop: '8px', opacity: 0.7 }}>
-            Veto data is only available for matches that include pick/ban information
-          </p>
-        </div>
-      );
-    }
-
-    return (
-      <div className="veto-stats-card">
-        <h4>{teamName} Veto Stats</h4>
-        <div className="stat-grid">
-          <div className="stat-item ban">
-            <span className="stat-label">Most Vetoed Map</span>
-            <span className="stat-value">{stats.mostVetoed ? stats.mostVetoed.map : 'N/A'}</span>
-            <span className="stat-count">{stats.mostVetoed ? `${stats.mostVetoed.count} bans` : ''}</span>
-          </div>
-          <div className="stat-item pick">
-            <span className="stat-label">Most Picked Map</span>
-            <span className="stat-value">{stats.mostPicked ? stats.mostPicked.map : 'N/A'}</span>
-            <span className="stat-count">{stats.mostPicked ? `${stats.mostPicked.count} picks` : ''}</span>
-          </div>
-          <div className="stat-item info">
-            <span className="stat-label">Total Recorded Vetos</span>
-            <span className="stat-value">{stats.totalVetos}</span>
-          </div>
-        </div>
-
-        {/* Show all bans and picks */}
-        <div className="veto-details">
-          {stats.allBans.length > 0 && (
-            <div className="veto-list">
-              <h5>Map Bans</h5>
-              {stats.allBans.map(([map, count]) => (
-                <div key={map} className="veto-list-item">
-                  <span className="map-name">{map}</span>
-                  <span className="count">{count} times</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {stats.allPicks.length > 0 && (
-            <div className="veto-list">
-              <h5>Map Picks</h5>
-              {stats.allPicks.map(([map, count]) => (
-                <div key={map} className="veto-list-item">
-                  <span className="map-name">{map}</span>
-                  <span className="count">{count} times</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="veto-stats-container">
-      <div className="veto-stats-wrapper">
-        {renderTeamStats(statsA, teamA.name)}
-        {teamB && <div className="vs-divider">VS</div>}
-        {teamB && renderTeamStats(statsB, teamB.name)}
-      </div>
-    </div>
-  );
-};
-
 // ============================================================================
 // MAIN APP COMPONENT
 // ============================================================================
@@ -1041,7 +1386,6 @@ export default function FACEITTeamCompare() {
   const [error, setError] = useState(null);
   const [selectedSeason, setSelectedSeason] = useState('S55'); // Season filter
   const [headerCollapsed, setHeaderCollapsed] = useState(false); // Collapsible header
-  const [activeSection, setActiveSection] = useState('compare'); // Active tab section
 
   // Load cached teams from localStorage on mount
   // Load cached teams from localStorage on mount
@@ -1117,7 +1461,7 @@ export default function FACEITTeamCompare() {
     }
 
     // If team is from sample data or already has full data, just set it
-    if (team.roster && team.mapStats && team.vetoStats) {
+    if (team.roster && team.mapStats) {
       setTeam(team);
       return;
     }
@@ -1139,37 +1483,14 @@ export default function FACEITTeamCompare() {
       const memberStatsPromises = teamDetails.members.map(member =>
         api.getPlayerStats(member.user_id).catch(() => ({}))
       );
-
-      // Fetch player details for all team members (to get skill level/ELO)
-      const memberDetailsPromises = teamDetails.members.map(member =>
-        api.getPlayer(member.user_id).catch(() => ({}))
-      );
-
-      const [memberStatsArray, memberDetailsArray] = await Promise.all([
-        Promise.all(memberStatsPromises),
-        Promise.all(memberDetailsPromises)
-      ]);
+      const memberStatsArray = await Promise.all(memberStatsPromises);
 
       const memberStats = {};
       teamDetails.members.forEach((member, idx) => {
         memberStats[member.user_id] = memberStatsArray[idx];
-
-        // Merge detailed player info (skill level, elo) into the member object
-        const details = memberDetailsArray[idx];
-        if (details && details.games && details.games[GAME_ID]) {
-          member.skill_level = details.games[GAME_ID].skill_level;
-          member.faceit_elo = details.games[GAME_ID].faceit_elo;
-        }
       });
 
       const fullTeamData = transformTeamData(teamDetails, teamStats, memberStats);
-
-      // Initialize veto stats
-      fullTeamData.vetoStats = {
-        bans: {},
-        picks: {},
-        totalVetos: 0
-      };
 
       // Fetch match history from ALL team members to get comprehensive match data
       try {
@@ -1215,14 +1536,6 @@ export default function FACEITTeamCompare() {
             ]);
             stats.success++;
 
-            // Debug: Log the full match data structure for first match
-            if (stats.success === 1) {
-              console.log('=== SAMPLE MATCH DATA ===');
-              console.log('Full matchData:', JSON.stringify(matchData, null, 2));
-              console.log('Voting data:', matchData.voting);
-              console.log('========================');
-            }
-
             // Extract team info from getMatch response
             const teams = matchData.teams || {};
             const faction1 = teams.faction1 || Object.values(teams)[0];
@@ -1234,61 +1547,15 @@ export default function FACEITTeamCompare() {
 
             // Find which faction is our team based on team name
             let opponentFaction = null;
-            let ourFactionId = null;
 
             if (faction1.name === teamDetails.name) {
               opponentFaction = faction2;
-              ourFactionId = faction1.faction_id;
             } else if (faction2.name === teamDetails.name) {
               opponentFaction = faction1;
-              ourFactionId = faction2.faction_id;
             } else {
               // Team name doesn't match - this is a pug or individual match, skip it
               stats.filtered++;
               return null;
-            }
-
-            // Process Veto Data
-            if (matchData.voting && matchData.voting.map) {
-              const mapVoting = matchData.voting.map;
-              const entities = mapVoting.entities || [];
-              const picks = mapVoting.pick || [];
-
-              if (Array.isArray(picks) && picks.length > 0) {
-                // Check if elements are objects
-                if (typeof picks[0] === 'object') {
-                  const bestOf = matchData.best_of || '1';
-                  picks.forEach((vote, index) => {
-                    if (vote.team_id === ourFactionId) {
-                      // Determine if Ban or Pick based on index and Format
-                      let action = 'unknown';
-                      if (bestOf === '1') {
-                        action = 'ban';
-                      } else if (bestOf === '3') {
-                        // BO3: Ban (0), Ban (1), Pick (2), Pick (3), Ban (4), Ban (5)...
-                        if (index === 0 || index === 1 || index === 4 || index === 5) {
-                          action = 'ban';
-                        } else if (index === 2 || index === 3) {
-                          action = 'pick';
-                        }
-                      }
-
-                      // Map GUID to Name
-                      const mapEntity = entities.find(e => e.guid === vote.guid);
-                      if (mapEntity) {
-                        const mapName = normalizeMapName(mapEntity.name || mapEntity.class_name);
-
-                        if (action === 'ban') {
-                          fullTeamData.vetoStats.bans[mapName] = (fullTeamData.vetoStats.bans[mapName] || 0) + 1;
-                        } else if (action === 'pick') {
-                          fullTeamData.vetoStats.picks[mapName] = (fullTeamData.vetoStats.picks[mapName] || 0) + 1;
-                        }
-                      }
-                    }
-                  });
-                  fullTeamData.vetoStats.totalVetos++;
-                }
-              }
             }
 
             // Use matchStats to get actual round data
@@ -1479,7 +1746,14 @@ export default function FACEITTeamCompare() {
 
   // Apply season filter to teams
   const filteredTeamA = useMemo(() => filterBySeason(teamA, selectedSeason), [teamA, selectedSeason, filterBySeason]);
+  const filteredTeamB = useMemo(() => filterBySeason(teamB, selectedSeason), [teamB, selectedSeason, filterBySeason]);
 
+  const vetoPrediction = useMemo(() => {
+    if (filteredTeamA && filteredTeamB) {
+      return predictVeto(filteredTeamA, filteredTeamB, vetoFormat);
+    }
+    return null;
+  }, [filteredTeamA, filteredTeamB, vetoFormat]);
 
   return (
     <div className="app-container">
@@ -1564,60 +1838,114 @@ export default function FACEITTeamCompare() {
             >
               Map Stats
             </button>
-            <button
-              className={activeSection === 'veto_stats' ? 'active' : ''}
-              onClick={() => setActiveSection('veto_stats')}
-            >
-              Veto Stats
-            </button>
           </nav>
 
           <main className="main-content">
-            {activeSection === 'compare' && (
-              <section className="single-team-section">
-                <div className="unified-team-card">
+            {activeSection === 'compare' && viewMode === 'compare' && (
+              <section className="comparison-section">
+                <div className="teams-grid">
                   <TeamCard team={filteredTeamA} side="team-a" />
+                  <TeamCard team={filteredTeamB} side="team-b" />
+                </div>
+                <MapOverviewPanel
+                  teamA={filteredTeamA}
+                  teamB={filteredTeamB}
+                  singleMode={false}
+                />
+              </section>
+            )}
 
-                  <div className="overview-divider"></div>
+            {activeSection === 'compare' && viewMode === 'single' && (
+              <section className="single-team-section">
+                <TeamCard team={filteredTeamA} side="team-a" />
+                <MapOverviewPanel
+                  teamA={filteredTeamA}
+                  teamB={null}
+                  singleMode={true}
+                />
+              </section>
+            )}
 
-                  <div className="team-overview-section">
-                    <h3>Team Overview</h3>
-                    <div className="overview-stats">
-                      <div className="overview-stat">
-                        <span className="stat-label">Win Rate</span>
-                        <span className="stat-value">{filteredTeamA.record.winRate}%</span>
-                        <span className="stat-subtext">{filteredTeamA.record.wins}W - {filteredTeamA.record.losses}L</span>
+            {activeSection === 'veto' && viewMode === 'compare' && (
+              <section className="at-a-glance-section">
+                <div className="section-header">
+                  <h2>At a Glance</h2>
+                  <p>Quick comparison of key team statistics</p>
+                </div>
+                <div className="glance-grid">
+                  <div className="glance-card">
+                    <h3>Overall Win Rate</h3>
+                    <div className="glance-comparison">
+                      <div className="glance-team team-a">
+                        <span className="team-tag">{filteredTeamA.tag}</span>
+                        <span className="glance-value">{filteredTeamA.record.winRate}%</span>
                       </div>
-                      <div className="stat-divider"></div>
-                      <div className="overview-stat">
-                        <span className="stat-label">Total Matches</span>
-                        <span className="stat-value">{filteredTeamA.record.matches}</span>
-                        <span className="stat-subtext">Last 6 Months</span>
+                      <div className="glance-vs">VS</div>
+                      <div className="glance-team team-b">
+                        <span className="team-tag">{filteredTeamB.tag}</span>
+                        <span className="glance-value">{filteredTeamB.record.winRate}%</span>
                       </div>
-                      <div className="stat-divider"></div>
-                      <div className="overview-stat">
-                        <span className="stat-label">Average Rating</span>
-                        <span className="stat-value">
-                          {(filteredTeamA.roster.reduce((sum, p) => sum + p.rating, 0) / filteredTeamA.roster.length).toFixed(2)}
-                        </span>
-                        <span className="stat-subtext">Team Average</span>
+                    </div>
+                    <div className="glance-bar">
+                      <div
+                        className="glance-fill team-a"
+                        style={{ width: `${(teamA.record.winRate / (teamA.record.winRate + teamB.record.winRate)) * 100}%` }}
+                      />
+                      <div
+                        className="glance-fill team-b"
+                        style={{ width: `${(teamB.record.winRate / (teamA.record.winRate + teamB.record.winRate)) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="glance-card">
+                    <h3>Total Matches</h3>
+                    <div className="glance-comparison">
+                      <div className="glance-team team-a">
+                        <span className="team-tag">{filteredTeamA.tag}</span>
+                        <span className="glance-value">{filteredTeamA.record.matches}</span>
                       </div>
-                      <div className="stat-divider"></div>
-                      <div className="overview-stat">
-                        <span className="stat-label">Maps Played</span>
-                        <span className="stat-value">{Object.keys(filteredTeamA.mapStats || {}).length}</span>
-                        <span className="stat-subtext">Unique Maps</span>
+                      <div className="glance-vs">VS</div>
+                      <div className="glance-team team-b">
+                        <span className="team-tag">{filteredTeamB.tag}</span>
+                        <span className="glance-value">{filteredTeamB.record.matches}</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="overview-divider"></div>
+                  <div className="glance-card">
+                    <h3>Team Average Rating</h3>
+                    <div className="glance-comparison">
+                      <div className="glance-team team-a">
+                        <span className="team-tag">{filteredTeamA.tag}</span>
+                        <span className="glance-value">
+                          {(teamA.roster.reduce((sum, p) => sum + p.rating, 0) / teamA.roster.length).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="glance-vs">VS</div>
+                      <div className="glance-team team-b">
+                        <span className="team-tag">{filteredTeamB.tag}</span>
+                        <span className="glance-value">
+                          {(teamB.roster.reduce((sum, p) => sum + p.rating, 0) / teamB.roster.length).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
 
-                  <MapOverviewPanel
-                    teamA={filteredTeamA}
-                    teamB={null}
-                    singleMode={true}
-                  />
+                  <div className="glance-card">
+                    <h3>Maps Played</h3>
+                    <div className="glance-comparison">
+                      <div className="glance-team team-a">
+                        <span className="team-tag">{filteredTeamA.tag}</span>
+                        <span className="glance-value">{Object.keys(filteredTeamA.mapStats || {}).length}</span>
+                      </div>
+                      <div className="glance-vs">VS</div>
+                      <div className="glance-team team-b">
+                        <span className="team-tag">{filteredTeamB.tag}</span>
+                        <span className="glance-value">{Object.keys(filteredTeamB.mapStats || {}).length}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </section>
             )}
@@ -1630,21 +1958,8 @@ export default function FACEITTeamCompare() {
                 </div>
                 <MapStatsDashboard
                   teamA={filteredTeamA}
-                  teamB={null}
-                  singleMode={true}
-                />
-              </section>
-            )}
-
-            {activeSection === 'veto_stats' && (
-              <section className="veto-stats-section">
-                <div className="section-header">
-                  <h2>Veto Statistics</h2>
-                  <p>Analysis of map bans and picks from match history</p>
-                </div>
-                <VetoStats
-                  teamA={filteredTeamA}
-                  teamB={null}
+                  teamB={viewMode === 'compare' ? teamB : null}
+                  singleMode={viewMode === 'single'}
                 />
               </section>
             )}
@@ -1652,12 +1967,11 @@ export default function FACEITTeamCompare() {
         </>
       ) : (
         <div className="empty-state">
-          <div className="empty-icon">🛡️</div>
-          <h2>Select a Team</h2>
-          <p>Search and select a team to begin analysis</p>
+          <div className="empty-icon">⚔️</div>
+          <h2>Select Two Teams</h2>
+          <p>Search and select teams to begin analysis</p>
         </div>
       )}
-
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
@@ -1686,7 +2000,8 @@ export default function FACEITTeamCompare() {
           --team-a: #ff6b6b;
           --team-a-dim: rgba(255, 107, 107, 0.15);
           
-
+          --team-b: #4ecdc4;
+          --team-b-dim: rgba(78, 205, 196, 0.15);
           
           --win: #4ade80;
           --loss: #f87171;
@@ -2428,100 +2743,12 @@ export default function FACEITTeamCompare() {
 
         /* Single Team Section */
         .single-team-section {
-          max-width: 1200px;
+          max-width: 900px;
           margin: 0 auto;
         }
 
-        /* Unified Team Card - combines team info, overview stats, and map overview */
-        .unified-team-card {
-          background: var(--bg-card);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-lg);
-          box-shadow: var(--shadow-md);
-          overflow: hidden;
-        }
-
-        .unified-team-card .team-card {
-          background: transparent;
-          border: none;
-          box-shadow: none;
-          margin: 0;
-        }
-
-        .overview-divider {
-          height: 1px;
-          background: var(--border-subtle);
-          margin: 0;
-        }
-
-        .team-overview-section {
-          padding: 32px 40px;
-        }
-
-        .team-overview-section h3 {
-          font-size: 14px;
-          font-weight: 600;
-          color: var(--text-muted);
-          margin-bottom: 20px;
-          text-transform: uppercase;
-          letter-spacing: 1px;
-        }
-
-        .overview-stats {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 24px;
-        }
-
-        .overview-stat {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 6px;
-          flex: 1;
-          text-align: center;
-        }
-
-        .overview-stat .stat-label {
-          font-size: 11px;
-          font-weight: 600;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-          color: var(--text-muted);
-        }
-
-        .overview-stat .stat-value {
-          font-size: 28px;
-          font-weight: 700;
-          color: var(--text-primary);
-          line-height: 1;
-        }
-
-        .overview-stat .stat-subtext {
-          font-size: 12px;
-          color: var(--text-secondary);
-        }
-
-        .stat-divider {
-          width: 1px;
-          height: 60px;
-          background: var(--border-subtle);
-          flex-shrink: 0;
-        }
-
-        @media (max-width: 768px) {
-          .overview-stats {
-            flex-wrap: wrap;
-          }
-
-          .stat-divider {
-            display: none;
-          }
-
-          .overview-stat {
-            min-width: calc(50% - 8px);
-          }
+        .single-team-section .team-card {
+          width: 100%;
         }
 
         /* At a Glance Section */
@@ -3064,6 +3291,7 @@ export default function FACEITTeamCompare() {
         }
 
         .timeline-step.team-a .step-team { background: var(--team-a-dim); color: var(--team-a); }
+        .timeline-step.team-b .step-team { background: var(--team-b-dim); color: var(--team-b); }
         .timeline-step.team-d .step-team { background: var(--bg-tertiary); color: var(--text-muted); }
 
         .timeline-legend {
@@ -3100,7 +3328,195 @@ export default function FACEITTeamCompare() {
           color: var(--text-muted);
         }
 
+        /* Veto Prediction */
+        .veto-prediction {
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-lg);
+          padding: 24px;
+        }
 
+        .prediction-summary {
+          display: flex;
+          align-items: stretch;
+          gap: 20px;
+          margin-bottom: 32px;
+        }
+
+        .prediction-card {
+          flex: 1;
+          padding: 20px;
+          background: var(--bg-secondary);
+          border-radius: var(--radius-md);
+          border: 1px solid var(--border-subtle);
+        }
+
+        .prediction-card.team-a { border-left: 3px solid var(--team-a); }
+        .prediction-card.team-b { border-left: 3px solid var(--team-b); }
+
+        .pred-team {
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 16px;
+          font-weight: 700;
+          margin-bottom: 16px;
+        }
+
+        .prediction-card.team-a .pred-team { color: var(--team-a); }
+        .prediction-card.team-b .pred-team { color: var(--team-b); }
+
+        .pred-items {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .pred-item {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .pred-label {
+          font-size: 12px;
+          color: var(--text-muted);
+        }
+
+        .pred-map {
+          font-size: 13px;
+          font-weight: 600;
+          padding: 4px 12px;
+          border-radius: 4px;
+        }
+
+        .pred-map.ban { background: rgba(239, 68, 68, 0.15); color: var(--ban); }
+        .pred-map.pick { background: rgba(34, 197, 94, 0.15); color: var(--pick); }
+
+        .vs-badge {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 14px;
+          font-weight: 800;
+          color: var(--text-muted);
+          padding: 0 12px;
+        }
+
+        .high-diff-section {
+          margin-bottom: 32px;
+        }
+
+        .high-diff-maps {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 12px;
+        }
+
+        .diff-map-card {
+          padding: 16px;
+          background: var(--bg-secondary);
+          border-radius: var(--radius-md);
+          border: 1px solid var(--border-subtle);
+        }
+
+        .diff-map-name {
+          font-size: 14px;
+          font-weight: 600;
+          margin-bottom: 12px;
+          text-align: center;
+        }
+
+        .diff-bars {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .diff-team {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+          font-size: 11px;
+        }
+
+        .diff-team span:first-child {
+          color: var(--text-muted);
+          font-weight: 600;
+        }
+
+        .diff-team span:last-child {
+          font-family: 'JetBrains Mono', monospace;
+          font-weight: 600;
+        }
+
+        .diff-team .higher {
+          color: var(--win);
+        }
+
+        .diff-indicator {
+          padding: 4px 8px;
+          background: var(--bg-tertiary);
+          border-radius: 4px;
+        }
+
+        .diff-value {
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--decider);
+        }
+
+        .predicted-pool {
+          padding-top: 20px;
+          border-top: 1px solid var(--border-subtle);
+        }
+
+        .pool-maps {
+          display: flex;
+          gap: 16px;
+          justify-content: center;
+        }
+
+        .pool-map {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+          padding: 16px 24px;
+          background: var(--bg-secondary);
+          border: 2px solid var(--border-medium);
+          border-radius: var(--radius-md);
+        }
+
+        .pool-map.decider {
+          border-color: var(--decider);
+          background: rgba(245, 158, 11, 0.1);
+        }
+
+        .pool-map-num {
+          font-size: 10px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          color: var(--text-muted);
+        }
+
+        .pool-map-name {
+          font-size: 16px;
+          font-weight: 600;
+        }
+
+        .pool-map-tag {
+          font-size: 9px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          color: var(--decider);
+          padding: 2px 8px;
+          background: rgba(245, 158, 11, 0.2);
+          border-radius: 10px;
+        }
 
         /* Map Stats Dashboard */
         .map-stats-dashboard {
@@ -3145,25 +3561,19 @@ export default function FACEITTeamCompare() {
 
         /* Map Overview Section */
         .map-overview-section {
-          padding: 32px 40px;
-          background: transparent;
-          border: none;
-          border-radius: 0;
-          margin: 0;
-        }
-
-        .unified-team-card .map-overview-section {
-          padding: 32px 40px;
+          padding: 32px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-lg);
+          margin-top: 24px;
         }
 
         .map-overview-section h3 {
-          font-size: 14px;
-          font-weight: 600;
-          color: var(--text-muted);
-          margin-bottom: 20px;
-          text-align: left;
-          text-transform: uppercase;
-          letter-spacing: 1px;
+          font-size: 18px;
+          font-weight: 700;
+          color: var(--text-primary);
+          margin-bottom: 24px;
+          text-align: center;
         }
 
         .map-overview-grid {
@@ -3234,7 +3644,51 @@ export default function FACEITTeamCompare() {
           color: var(--text-secondary);
         }
 
+        /* Compare mode overview styles */
+        .overview-team-section {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
 
+        .overview-team-section h4 {
+          text-align: center;
+          margin: 0;
+          padding: 8px;
+        }
+
+        .overview-team-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 12px;
+        }
+
+        @media (max-width: 1200px) {
+          .map-overview-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .overview-team-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+
+        .overview-card.compact {
+          padding: 12px;
+        }
+
+        .overview-value-small {
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 16px;
+          font-weight: 700;
+          color: var(--faceit-orange);
+          margin-bottom: 4px;
+        }
+
+        .overview-subtext-small {
+          font-size: 10px;
+          color: var(--text-secondary);
+        }
 
         /* Map Win Rates Section (in Map Stats) */
         .map-winrates-section {
@@ -3251,7 +3705,31 @@ export default function FACEITTeamCompare() {
           text-align: center;
         }
 
+        .map-wr-comparison {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 24px;
+          max-width: 1400px;
+          margin: 0 auto;
+        }
 
+        @media (max-width: 900px) {
+          .map-wr-comparison {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        .map-wr-column {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .map-wr-column h4 {
+          text-align: center;
+          margin: 0 0 8px 0;
+          padding: 8px;
+        }
 
         /* Collapsible Map Items */
         .map-wr-item {
@@ -3362,7 +3840,32 @@ export default function FACEITTeamCompare() {
           padding: 12px;
         }
 
+        .map-comparison {
+          display: grid;
+          grid-template-columns: 1fr auto 1fr;
+          gap: 0;
+        }
 
+        @media (max-width: 900px) {
+          .map-comparison {
+            grid-template-columns: 1fr;
+          }
+          .map-visual {
+            order: -1;
+          }
+        }
+
+        .map-team-stats {
+          padding: 24px;
+        }
+
+        .map-team-stats.team-a-stats {
+          border-right: 1px solid var(--border-subtle);
+        }
+
+        .map-team-stats.team-b-stats {
+          border-left: 1px solid var(--border-subtle);
+        }
 
         .map-team-header {
           margin-bottom: 20px;
@@ -3433,9 +3936,93 @@ export default function FACEITTeamCompare() {
           margin-bottom: 24px;
         }
 
+        .wr-comparison {
+          width: 100%;
+        }
 
+        .wr-compare-bar {
+          display: flex;
+          height: 32px;
+          border-radius: var(--radius-sm);
+          overflow: hidden;
+        }
 
+        .wr-compare-bar .wr-fill {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 12px;
+          font-weight: 700;
+          color: #000;
+          transition: width 0.5s ease;
+        }
 
+        .wr-compare-bar .wr-fill.team-a {
+          background: linear-gradient(135deg, var(--team-a) 0%, #ff8f8f 100%);
+        }
+
+        .wr-compare-bar .wr-fill.team-b {
+          background: linear-gradient(135deg, #7eddd6 0%, var(--team-b) 100%);
+        }
+
+        /* Map Single View */
+        .map-single-view {
+          padding: 24px;
+        }
+
+        .map-single-view .map-team-stats {
+          max-width: 800px;
+          margin: 0 auto 24px;
+          padding: 24px;
+          background: var(--bg-secondary);
+          border-radius: var(--radius-md);
+        }
+
+        .map-single-view .stat-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 12px;
+        }
+
+        @media (max-width: 768px) {
+          .map-single-view .stat-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+
+        .map-matches-single {
+          max-width: 800px;
+          margin: 0 auto;
+          padding: 24px;
+          background: var(--bg-secondary);
+          border-radius: var(--radius-md);
+        }
+
+        .map-matches-single h3 {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-primary);
+          margin-bottom: 16px;
+          padding-bottom: 12px;
+          border-bottom: 1px solid var(--border-subtle);
+        }
+
+        /* Map Matches */
+        .map-matches-container {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
+          padding: 24px;
+          background: var(--bg-secondary);
+          border-top: 1px solid var(--border-subtle);
+        }
+
+        @media (max-width: 900px) {
+          .map-matches-container {
+            grid-template-columns: 1fr;
+          }
+        }
 
         .map-matches h3 {
           font-size: 14px;
@@ -3652,165 +4239,7 @@ export default function FACEITTeamCompare() {
             grid-template-columns: 1fr;
           }
         }
-
-        /* Veto Stats */
-        .veto-stats-container {
-          display: flex;
-          flex-direction: column;
-          gap: 20px;
-        }
-
-        .veto-stats-wrapper {
-          display: flex;
-          gap: 24px;
-          align-items: stretch;
-        }
-
-        .veto-stats-card {
-          flex: 1;
-          background: var(--bg-secondary);
-          border: 1px solid var(--border-medium);
-          border-radius: var(--radius-md);
-          padding: 20px;
-        }
-
-        .veto-stats-card h4 {
-          font-size: 16px;
-          font-weight: 600;
-          color: var(--text-primary);
-          margin-bottom: 16px;
-          padding-bottom: 12px;
-          border-bottom: 1px solid var(--border-subtle);
-        }
-
-        .stat-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-          gap: 16px;
-        }
-
-        .stat-item {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          padding: 12px;
-          border-radius: var(--radius-sm);
-          background: var(--bg-tertiary);
-          border: 1px solid var(--border-subtle);
-        }
-
-        .stat-item.ban {
-          border-left: 3px solid var(--ban);
-        }
-
-        .stat-item.pick {
-          border-left: 3px solid var(--pick);
-        }
-
-        .stat-item.info {
-          border-left: 3px solid var(--text-muted);
-        }
-
-        .stat-label {
-          font-size: 11px;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-          color: var(--text-secondary);
-        }
-
-        .stat-value {
-          font-size: 18px;
-          font-weight: 700;
-          color: var(--text-primary);
-        }
-
-        .stat-count {
-          font-size: 12px;
-          color: var(--text-muted);
-        }
-
-        .vs-divider {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-weight: 800;
-          font-size: 14px;
-          color: var(--text-muted);
-          background: var(--bg-tertiary);
-          width: 40px;
-          height: 40px;
-          border-radius: 50%;
-          align-self: center;
-          flex-shrink: 0;
-          border: 1px solid var(--border-medium);
-        }
-
-        .veto-details {
-          margin-top: 20px;
-          padding-top: 20px;
-          border-top: 1px solid var(--border-subtle);
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 16px;
-        }
-
-        .veto-list h5 {
-          font-size: 13px;
-          font-weight: 600;
-          color: var(--text-secondary);
-          margin-bottom: 12px;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-
-        .veto-list-item {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 8px 12px;
-          background: var(--bg-tertiary);
-          border-radius: var(--radius-sm);
-          margin-bottom: 6px;
-        }
-
-        .veto-list-item .map-name {
-          font-size: 13px;
-          font-weight: 500;
-          color: var(--text-primary);
-        }
-
-        .veto-list-item .count {
-          font-size: 12px;
-          color: var(--text-muted);
-          font-family: var(--font-mono);
-        }
-
-        .no-data {
-          text-align: center;
-          padding: 40px 20px;
-          color: var(--text-muted);
-          background: var(--bg-tertiary);
-          border-radius: var(--radius-md);
-        }
-
-        .no-data p {
-          margin: 0;
-        }
-
-        @media (max-width: 768px) {
-          .veto-stats-wrapper {
-            flex-direction: column;
-          }
-
-          .vs-divider {
-            margin: 0 auto;
-          }
-
-          .veto-details {
-            grid-template-columns: 1fr;
-          }
-        }
       `}</style>
-    </div >
+    </div>
   );
 }

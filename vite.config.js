@@ -11,5 +11,22 @@ export default defineConfig(({ command, mode }) => {
       assetsDir: 'assets',
       sourcemap: false,
     },
+    server: {
+      proxy: {
+        '/api': {
+          target: 'https://open.faceit.com/data/v4',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api/, ''),
+          configure: (proxy, options) => {
+            proxy.on('proxyReq', (proxyReq, req, res) => {
+              // Forward authorization header from original request
+              if (req.headers.authorization) {
+                proxyReq.setHeader('Authorization', req.headers.authorization);
+              }
+            });
+          }
+        }
+      }
+    }
   }
 })
