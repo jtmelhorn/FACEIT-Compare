@@ -796,6 +796,18 @@ const MapStatsDashboard = ({ teamA }) => {
       matches: []
     };
     return [displayName, stats];
+  })
+  // Sort: played maps first (by win rate descending), then unplayed maps at bottom
+  .sort((a, b) => {
+    const aPlayed = a[1].played > 0;
+    const bPlayed = b[1].played > 0;
+
+    // If one is played and the other isn't, played comes first
+    if (aPlayed && !bPlayed) return -1;
+    if (!aPlayed && bPlayed) return 1;
+
+    // If both played or both unplayed, sort by win rate (descending)
+    return b[1].wr - a[1].wr;
   });
 
   const toggleMap = (mapName) => {
@@ -809,7 +821,7 @@ const MapStatsDashboard = ({ teamA }) => {
         <h3>Map Win Rates (Current Pool)</h3>
         <div className="map-wr-list">
           {mapEntriesA.length > 0 ? mapEntriesA.map(([mapName, stats]) => (
-            <div key={mapName} className="map-wr-item">
+            <div key={mapName} className={`map-wr-item ${stats.played === 0 ? 'unplayed' : ''}`}>
               <div className="map-wr-clickable" onClick={() => toggleMap(mapName)}>
                 <WinRateBar
                   wr={stats.wr || 0}
@@ -3276,6 +3288,10 @@ export default function FACEITTeamCompare() {
         .map-wr-item {
           display: flex;
           flex-direction: column;
+        }
+
+        .map-wr-item.unplayed {
+          opacity: 0.4;
         }
 
         .map-wr-clickable {
