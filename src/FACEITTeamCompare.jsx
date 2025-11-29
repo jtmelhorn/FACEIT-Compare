@@ -322,18 +322,17 @@ const createFaceitAPI = (apiKey) => {
 // DATA TRANSFORMATION UTILITIES
 // ============================================================================
 
-// Current CS2 Active Duty Map Pool (as of 2025)
-const ALL_MAPS = ['de_dust2', 'de_mirage', 'de_inferno', 'de_nuke', 'de_anubis', 'de_ancient', 'de_overpass'];
+// All CS2 Maps (current + legacy) - sorting and greying handles what's played
+const ALL_MAPS = ['de_dust2', 'de_mirage', 'de_inferno', 'de_nuke', 'de_ancient', 'de_train', 'de_overpass', 'de_anubis', 'de_vertigo'];
 const MAP_DISPLAY_NAMES = {
   'de_dust2': 'Dust2',
   'de_mirage': 'Mirage',
   'de_inferno': 'Inferno',
   'de_nuke': 'Nuke',
-  'de_anubis': 'Anubis',
   'de_ancient': 'Ancient',
-  'de_overpass': 'Overpass',
-  // Legacy maps (for old data compatibility)
   'de_train': 'Train',
+  'de_overpass': 'Overpass',
+  'de_anubis': 'Anubis',
   'de_vertigo': 'Vertigo',
 };
 
