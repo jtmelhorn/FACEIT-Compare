@@ -8,14 +8,14 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 const IS_DEV = import.meta.env.DEV;
 const GAME_ID = 'cs2';
 
-// Helper to construct API URL - works everywhere
+// Helper to construct API URL
 const getApiUrl = (path) => {
   if (IS_DEV) {
     // Development: use Vite dev proxy
     return `/api/${path}`;
   } else {
-    // Production: use public CORS proxy (works on any hosting)
-    return `https://corsproxy.io/?${encodeURIComponent(`https://open.faceit.com/data/v4/${path}`)}`;
+    // Production: use Netlify serverless function
+    return `/.netlify/functions/api?path=${encodeURIComponent(path)}`;
   }
 };
 
