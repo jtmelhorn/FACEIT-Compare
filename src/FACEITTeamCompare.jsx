@@ -1616,6 +1616,7 @@ export default function FACEITTeamCompare() {
           justify-content: space-between;
           align-items: center;
           margin-bottom: 16px;
+          padding-right: 48px;
         }
 
         .header-brand {
