@@ -810,7 +810,9 @@ const MapStatsDashboard = ({ teamA }) => {
     return b[1].wr - a[1].wr;
   });
 
-  const toggleMap = (mapName) => {
+  const toggleMap = (mapName, stats) => {
+    // Don't allow expanding maps with no matches
+    if (stats.played === 0) return;
     setExpandedMap(expandedMap === mapName ? null : mapName);
   };
 
@@ -822,7 +824,7 @@ const MapStatsDashboard = ({ teamA }) => {
         <div className="map-wr-list">
           {mapEntriesA.length > 0 ? mapEntriesA.map(([mapName, stats]) => (
             <div key={mapName} className={`map-wr-item ${stats.played === 0 ? 'unplayed' : ''}`}>
-              <div className="map-wr-clickable" onClick={() => toggleMap(mapName)}>
+              <div className="map-wr-clickable" onClick={() => toggleMap(mapName, stats)}>
                 <WinRateBar
                   wr={stats.wr || 0}
                   label={mapName}
@@ -3292,6 +3294,14 @@ export default function FACEITTeamCompare() {
 
         .map-wr-item.unplayed {
           opacity: 0.4;
+        }
+
+        .map-wr-item.unplayed .map-wr-clickable {
+          cursor: default;
+        }
+
+        .map-wr-item.unplayed .expand-icon {
+          display: none;
         }
 
         .map-wr-clickable {
