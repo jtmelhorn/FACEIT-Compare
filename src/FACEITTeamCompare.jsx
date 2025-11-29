@@ -796,7 +796,7 @@ const MapStatsDashboard = ({ teamA }) => {
     };
     return [displayName, stats];
   })
-  // Sort: played maps first (by win rate descending), then unplayed maps at bottom
+  // Sort: played maps first (by matches played descending), then unplayed maps at bottom
   .sort((a, b) => {
     const aPlayed = a[1].played > 0;
     const bPlayed = b[1].played > 0;
@@ -805,8 +805,8 @@ const MapStatsDashboard = ({ teamA }) => {
     if (aPlayed && !bPlayed) return -1;
     if (!aPlayed && bPlayed) return 1;
 
-    // If both played or both unplayed, sort by win rate (descending)
-    return b[1].wr - a[1].wr;
+    // If both played or both unplayed, sort by matches played (descending)
+    return b[1].played - a[1].played;
   });
 
   const toggleMap = (mapName, stats) => {
