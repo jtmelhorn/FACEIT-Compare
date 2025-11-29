@@ -1,19 +1,20 @@
 # FACEIT Team Compare
 
-A modern web application for comparing CS2 teams on FACEIT, featuring team statistics, roster analysis, map performance, and veto predictions.
+A modern web application for analyzing CS2 teams on FACEIT, featuring team statistics, roster analysis, and detailed map performance tracking.
 
 ## Features
 
-- 🔍 **Team Search & Comparison** - Search and compare any two FACEIT CS2 teams
+- 🔍 **Team Search & Analysis** - Search and analyze FACEIT CS2 teams
 - 📊 **Detailed Statistics** - View comprehensive team and player statistics
-- 🗺️ **Map Performance Analysis** - Analyze win rates across all CS2 maps
-- 🎯 **Veto Prediction** - AI-powered pick/ban predictions for BO3 matches
-- 📈 **Visual Dashboard** - Clean, modern UI with interactive charts and comparisons
+- 🗺️ **Map Performance Dashboard** - Analyze win rates and match history across all CS2 maps
+- 📈 **Visual Dashboard** - Clean, modern UI with interactive charts and detailed stats
 - 🔑 **FACEIT API Integration** - Real-time data from official FACEIT API
+- 🎯 **Season Filtering** - Filter match data by FACEIT season (S52-S55)
+- 🔗 **Match Room Links** - Direct links to FACEIT match rooms for detailed analysis
 
-## Demo
+## Live Demo
 
-Visit the live demo: [https://yourusername.github.io/FACEIT-Compare/](https://yourusername.github.io/FACEIT-Compare/)
+Visit the live application: **[https://faceit-compare.netlify.app](https://faceit-compare.netlify.app)**
 
 ## Getting Started
 
@@ -56,57 +57,71 @@ npm run dev
    - Select two teams to compare
 
 3. **Explore Data:**
-   - **Team Comparison**: View detailed roster stats and recent matches
-   - **Veto Prediction**: See predicted map picks and bans
-   - **Map Stats**: Analyze performance on individual maps
+   - **Team Overview**: View detailed roster stats and team performance metrics
+   - **Map Stats Dashboard**: Analyze per-map performance with match history
+   - **Season Filter**: Filter matches by FACEIT season
 
-## Deployment to GitHub Pages
+## Future Enhancements
 
-### Option 1: Automatic Deployment (GitHub Actions)
+This project is actively being developed. Planned improvements include:
 
-This repository includes a GitHub Actions workflow that automatically deploys to GitHub Pages on every push to the `main` branch.
+### Code Quality & Architecture
+- 🏗️ **Refactor to React Best Practices**
+  - Extract reusable components
+  - Implement proper component composition
+  - Add PropTypes or TypeScript for type safety
+  - Separate business logic from presentation
 
-1. **Enable GitHub Pages:**
-   - Go to your repository Settings → Pages
-   - Under "Build and deployment", select "GitHub Actions" as the source
+- ⚡ **Performance Optimization**
+  - Minimize redundant API calls
+  - Implement proper caching strategies
+  - Add request debouncing for searches
+  - Optimize re-renders with React.memo and useMemo
 
-2. **Push your code:**
-```bash
-git add .
-git commit -m "Initial commit"
-git push origin main
-```
+- 🔧 **API Improvements**
+  - Batch API requests where possible
+  - Implement request queue management
+  - Add retry logic for failed requests
+  - Better error handling and user feedback
 
-3. **Access your site:**
-   - Your site will be available at: `https://yourusername.github.io/FACEIT-Compare/`
+### Feature Enhancements
+- 📊 **Veto Statistics**
+  - Research methods to obtain accurate pick/ban data from FACEIT API
+  - Implement veto pattern analysis
+  - Add historical veto trends
 
-### Option 2: Manual Deployment
+- 🎯 **Advanced Analytics**
+  - Head-to-head team comparison mode
+  - Player performance trends over time
+  - Advanced filtering options (date ranges, tournament types)
+  - Export data to CSV/JSON
 
-You can also deploy manually using the gh-pages package:
+- 🎨 **UI/UX Improvements**
+  - Dark/light theme toggle
+  - Customizable dashboard layouts
+  - Mobile-responsive design improvements
+  - Accessibility enhancements
 
-```bash
-npm run build
-npm run deploy
-```
+### Technical Debt
+- 📝 Add comprehensive test coverage (unit, integration, e2e)
+- 🔐 Implement backend API proxy for secure API key management
+- 📚 Add JSDoc documentation
+- 🚀 Optimize bundle size and code splitting
 
-## Configuration
+## Deployment
 
-### Vite Config
+The application is deployed on **Netlify** with automatic deployments from the main branch. It can also be deployed to GitHub Pages using the included GitHub Actions workflow.
 
-The `vite.config.js` file is configured for GitHub Pages deployment. Update the `base` property if your repository name is different:
+### Deploy to Netlify
+1. Fork/clone this repository
+2. Connect to Netlify
+3. Build command: `npm run build`
+4. Publish directory: `dist`
 
-```javascript
-export default defineConfig({
-  base: '/your-repo-name/',
-  // ...
-})
-```
-
-### Repository Name
-
-If you rename your repository, update:
-1. `vite.config.js` - Update the `base` path
-2. `README.md` - Update the demo link
+### Deploy to GitHub Pages
+1. Enable GitHub Pages in repository settings
+2. Select "GitHub Actions" as the source
+3. Push to main branch to trigger automatic deployment
 
 ## Built With
 
@@ -139,11 +154,20 @@ FACEIT-Compare/
 
 ## API Key Security
 
-⚠️ **Important:** The API key is entered client-side and stored in browser memory only. It is never sent to any server except FACEIT's official API. However, for production use, consider implementing a backend proxy to keep your API key secure.
+⚠️ **Important:** The API key is entered client-side and stored in browser memory only. It is never sent to any server except FACEIT's official API.
 
-## Demo Mode
+For production deployments on Netlify, the application uses a serverless function to proxy requests and keep API keys secure. For local development, Vite's dev server proxy is used.
 
-The application includes sample data for demonstration purposes. You can explore the interface without an API key using the pre-loaded sample teams.
+## Contributing
+
+This is an open source project and contributions are welcome! Here's how you can help:
+
+1. **Report Bugs** - Open an issue describing the bug and how to reproduce it
+2. **Suggest Features** - Share ideas for new features or improvements
+3. **Submit Pull Requests** - Fork the repo, make your changes, and submit a PR
+4. **Improve Documentation** - Help make the docs clearer and more comprehensive
+
+See the [Future Enhancements](#future-enhancements) section for areas where contributions would be especially valuable.
 
 ## License
 
@@ -154,6 +178,12 @@ This project is open source and available under the MIT License.
 - Data provided by [FACEIT](https://www.faceit.com)
 - Icons and design inspired by modern esports analytics platforms
 
-## Support
+## Support the Project
 
-For issues, questions, or contributions, please open an issue on GitHub.
+If you find this tool useful, consider supporting its development:
+- ☕ [Buy me a coffee](https://paypal.me/jtm258)
+- 🎮 [Send a CS2 skin](https://steamcommunity.com/tradeoffer/new/?partner=112689034&token=1634oYnV)
+
+## Questions or Issues?
+
+For bugs, feature requests, or questions, please [open an issue on GitHub](https://github.com/jtmelhorn/FACEIT-Compare/issues).
