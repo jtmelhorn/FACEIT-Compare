@@ -783,12 +783,20 @@ const MapOverviewPanel = ({ teamA }) => {
 const MapStatsDashboard = ({ teamA }) => {
   const [expandedMap, setExpandedMap] = useState(null);
 
-  // Get all map entries for displaying win/loss bars
-  // mapName in mapStats is the display name like "Dust 2", check if it exists in MAP_DISPLAY_NAMES values
-  const currentPoolDisplayNames = ALL_MAPS.map(mapKey => MAP_DISPLAY_NAMES[mapKey]);
-
-  const mapEntriesA = Object.entries(teamA.mapStats || {})
-    .filter(([mapName]) => currentPoolDisplayNames.includes(mapName));
+  // Create entries for ALL maps in the current pool, even if not played
+  const mapEntriesA = ALL_MAPS.map(mapKey => {
+    const displayName = MAP_DISPLAY_NAMES[mapKey];
+    const stats = teamA.mapStats?.[displayName] || {
+      wr: 0,
+      played: 0,
+      wins: 0,
+      losses: 0,
+      rounds: 0,
+      avgRounds: '0.0',
+      matches: []
+    };
+    return [displayName, stats];
+  });
 
   const toggleMap = (mapName) => {
     setExpandedMap(expandedMap === mapName ? null : mapName);
