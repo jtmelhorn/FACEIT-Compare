@@ -4,26 +4,18 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 // FACEIT API CONFIGURATION
 // ============================================================================
 
-// Environment-aware API configuration
+// Simple API configuration
 const IS_DEV = import.meta.env.DEV;
-const GAME_ID = 'cs2'; // CS2 game ID for FACEIT
+const GAME_ID = 'cs2';
 
-// Detect if we're on Netlify or GitHub Pages
-const isNetlify = !IS_DEV && typeof window !== 'undefined' && window.location.hostname.includes('netlify');
-const isGitHubPages = !IS_DEV && typeof window !== 'undefined' && window.location.hostname.includes('github.io');
-
-// Helper to construct API URL based on environment
+// Helper to construct API URL - works everywhere
 const getApiUrl = (path) => {
   if (IS_DEV) {
-    // Development: use Vite proxy
+    // Development: use Vite dev proxy
     return `/api/${path}`;
-  } else if (isNetlify) {
-    // Production on Netlify: use serverless function
-    return `/.netlify/functions/api?path=${encodeURIComponent(path)}`;
   } else {
-    // Production on GitHub Pages or other: direct API call
-    // Note: This will work if FACEIT API key is provided and API allows CORS
-    return `https://open.faceit.com/data/v4/${path}`;
+    // Production: use public CORS proxy (works on any hosting)
+    return `https://corsproxy.io/?${encodeURIComponent(`https://open.faceit.com/data/v4/${path}`)}`;
   }
 };
 
