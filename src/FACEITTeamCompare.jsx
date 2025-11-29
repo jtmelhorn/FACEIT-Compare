@@ -1540,7 +1540,7 @@ export default function FACEITTeamCompare() {
             rel="noopener noreferrer"
             className="github-link"
           >
-            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+            <svg viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
             </svg>
             Contribute on GitHub
@@ -1654,12 +1654,12 @@ export default function FACEITTeamCompare() {
         .support-links {
           display: flex;
           align-items: center;
-          gap: 12px;
+          gap: 8px;
         }
 
         .support-label {
-          font-size: 12px;
-          font-weight: 600;
+          font-size: 11px;
+          font-weight: 500;
           color: var(--text-secondary);
           letter-spacing: 0.3px;
         }
@@ -1667,9 +1667,9 @@ export default function FACEITTeamCompare() {
         .support-link {
           display: inline-flex;
           align-items: center;
-          gap: 6px;
-          padding: 8px 14px;
-          font-size: 13px;
+          gap: 4px;
+          padding: 6px 10px;
+          font-size: 11px;
           font-weight: 500;
           text-decoration: none;
           border-radius: var(--radius-sm);
@@ -1680,24 +1680,24 @@ export default function FACEITTeamCompare() {
         .support-link.paypal {
           color: #ffffff;
           background: linear-gradient(135deg, #0070BA 0%, #1F94C7 100%);
-          box-shadow: 0 2px 8px rgba(0, 112, 186, 0.3);
+          box-shadow: 0 1px 4px rgba(0, 112, 186, 0.25);
         }
 
         .support-link.paypal:hover {
           transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(0, 112, 186, 0.5);
+          box-shadow: 0 2px 8px rgba(0, 112, 186, 0.4);
         }
 
         .support-link.steam {
           color: #ffffff;
           background: linear-gradient(135deg, #1b2838 0%, #2a475e 100%);
           border: 1px solid rgba(102, 192, 244, 0.3);
-          box-shadow: 0 2px 8px rgba(102, 192, 244, 0.2);
+          box-shadow: 0 1px 4px rgba(102, 192, 244, 0.15);
         }
 
         .support-link.steam:hover {
           transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(102, 192, 244, 0.4);
+          box-shadow: 0 2px 8px rgba(102, 192, 244, 0.3);
           border-color: rgba(102, 192, 244, 0.6);
         }
 
@@ -3519,7 +3519,7 @@ export default function FACEITTeamCompare() {
         .app-footer {
           background: var(--bg-secondary);
           border-top: 1px solid var(--border-subtle);
-          padding: 24px 32px;
+          padding: 16px 32px;
           margin-top: 40px;
         }
 
@@ -3529,11 +3529,11 @@ export default function FACEITTeamCompare() {
           display: flex;
           justify-content: center;
           align-items: center;
-          gap: 20px;
+          gap: 12px;
         }
 
         .footer-content p {
-          font-size: 13px;
+          font-size: 11px;
           color: var(--text-secondary);
           margin: 0;
         }
@@ -3541,9 +3541,9 @@ export default function FACEITTeamCompare() {
         .github-link {
           display: inline-flex;
           align-items: center;
-          gap: 8px;
-          padding: 8px 16px;
-          font-size: 13px;
+          gap: 6px;
+          padding: 6px 12px;
+          font-size: 11px;
           font-weight: 500;
           color: var(--text-primary);
           text-decoration: none;
@@ -3557,11 +3557,13 @@ export default function FACEITTeamCompare() {
           background: var(--bg-hover);
           border-color: var(--faceit-orange);
           transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(255, 85, 0, 0.2);
+          box-shadow: 0 2px 8px rgba(255, 85, 0, 0.15);
         }
 
         .github-link svg {
           flex-shrink: 0;
+          width: 16px;
+          height: 16px;
         }
 
       `}</style>
