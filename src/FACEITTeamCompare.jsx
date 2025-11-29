@@ -4,9 +4,22 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 // FACEIT API CONFIGURATION
 // ============================================================================
 
-// Use proxy in development, direct API in production
-const FACEIT_API_BASE = import.meta.env.DEV ? '/api' : 'https://open.faceit.com/data/v4';
+// Use proxy in development, Netlify function in production
+// Development: Vite proxy (/api -> FACEIT API)
+// Production: Netlify serverless function (/.netlify/functions/api)
+const IS_DEV = import.meta.env.DEV;
 const GAME_ID = 'cs2'; // CS2 game ID for FACEIT
+
+// Helper to construct API URL based on environment
+const getApiUrl = (path) => {
+  if (IS_DEV) {
+    // Development: use Vite proxy
+    return `/api/${path}`;
+  } else {
+    // Production: use Netlify function with path as query parameter
+    return `/.netlify/functions/api?path=${encodeURIComponent(path)}`;
+  }
+};
 
 // API Service - In production, replace with your actual API key
 // Get your API key from https://developers.faceit.com
@@ -22,7 +35,7 @@ const createFaceitAPI = (apiKey) => {
     verifyApiKey: async () => {
       try {
         const response = await fetch(
-          `${FACEIT_API_BASE}/games?offset=0&limit=1`,
+          getApiUrl('games?offset=0&limit=1'),
           { headers }
         );
         if (response.status === 401) {
@@ -43,7 +56,7 @@ const createFaceitAPI = (apiKey) => {
     // Search for teams by name
     searchTeams: async (nickname, limit = 20) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/search/teams?nickname=${encodeURIComponent(nickname)}&game=${GAME_ID}&limit=${limit}`,
+        getApiUrl(`search/teams?nickname=${encodeURIComponent(nickname)}&game=${GAME_ID}&limit=${limit}`),
         { headers }
       );
       if (!response.ok) throw new Error('Failed to search teams');
@@ -53,7 +66,7 @@ const createFaceitAPI = (apiKey) => {
     // Get team details
     getTeam: async (teamId) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/teams/${teamId}`,
+        getApiUrl(`teams/${teamId}`),
         { headers }
       );
       if (!response.ok) throw new Error('Failed to get team');
@@ -63,7 +76,7 @@ const createFaceitAPI = (apiKey) => {
     // Get team statistics
     getTeamStats: async (teamId) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/teams/${teamId}/stats/${GAME_ID}`,
+        getApiUrl(`teams/${teamId}/stats/${GAME_ID}`),
         { headers }
       );
       if (!response.ok) throw new Error('Failed to get team stats');
@@ -73,7 +86,7 @@ const createFaceitAPI = (apiKey) => {
     // Get player details
     getPlayer: async (playerId) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/players/${playerId}`,
+        getApiUrl(`players/${playerId}`),
         { headers }
       );
       if (!response.ok) throw new Error('Failed to get player');
@@ -83,7 +96,7 @@ const createFaceitAPI = (apiKey) => {
     // Get player statistics
     getPlayerStats: async (playerId) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/players/${playerId}/stats/${GAME_ID}`,
+        getApiUrl(`players/${playerId}/stats/${GAME_ID}`),
         { headers }
       );
       if (!response.ok) throw new Error('Failed to get player stats');
@@ -93,7 +106,7 @@ const createFaceitAPI = (apiKey) => {
     // Get player match history
     getPlayerHistory: async (playerId, limit = 20) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/players/${playerId}/history?game=${GAME_ID}&limit=${limit}`,
+        getApiUrl(`players/${playerId}/history?game=${GAME_ID}&limit=${limit}`),
         { headers }
       );
       if (!response.ok) throw new Error('Failed to get player history');
@@ -103,7 +116,7 @@ const createFaceitAPI = (apiKey) => {
     // Get match statistics
     getMatchStats: async (matchId) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/matches/${matchId}/stats`,
+        getApiUrl(`matches/${matchId}/stats`),
         { headers }
       );
       if (!response.ok) {
@@ -117,7 +130,7 @@ const createFaceitAPI = (apiKey) => {
     // Search for players
     searchPlayers: async (nickname, limit = 20) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/search/players?nickname=${encodeURIComponent(nickname)}&game=${GAME_ID}&limit=${limit}`,
+        getApiUrl(`search/players?nickname=${encodeURIComponent(nickname)}&game=${GAME_ID}&limit=${limit}`),
         { headers }
       );
       if (!response.ok) throw new Error('Failed to search players');
@@ -127,7 +140,7 @@ const createFaceitAPI = (apiKey) => {
     // Get hub details (for league/division info)
     getHub: async (hubId) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/hubs/${hubId}`,
+        getApiUrl(`hubs/${hubId}`),
         { headers }
       );
       if (!response.ok) throw new Error('Failed to get hub');
@@ -137,7 +150,7 @@ const createFaceitAPI = (apiKey) => {
     // Get hub stats/leaderboard
     getHubStats: async (hubId, limit = 100) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/hubs/${hubId}/stats?limit=${limit}`,
+        getApiUrl(`hubs/${hubId}/stats?limit=${limit}`),
         { headers }
       );
       if (!response.ok) throw new Error('Failed to get hub stats');
@@ -161,7 +174,7 @@ const createFaceitAPI = (apiKey) => {
     // Get teams/members in a hub
     getHubMembers: async (hubId, offset = 0, limit = 100) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/hubs/${hubId}/members?offset=${offset}&limit=${limit}`,
+        getApiUrl(`hubs/${hubId}/members?offset=${offset}&limit=${limit}`),
         { headers }
       );
       if (!response.ok) throw new Error('Failed to get hub members');
@@ -171,7 +184,7 @@ const createFaceitAPI = (apiKey) => {
     // Get league by ID
     getLeague: async (leagueId) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/leagues/${leagueId}`,
+        getApiUrl(`leagues/${leagueId}`),
         { headers }
       );
       if (!response.ok) throw new Error('Failed to get league');
@@ -181,7 +194,7 @@ const createFaceitAPI = (apiKey) => {
     // Get league season details
     getLeagueSeason: async (leagueId, seasonId) => {
       // Try getting the league first, which should contain seasons
-      const leagueUrl = `${FACEIT_API_BASE}/leagues/${leagueId}`;
+      const leagueUrl = getApiUrl(`leagues/${leagueId}`);
       console.log('Fetching league from:', leagueUrl);
       const leagueResponse = await fetch(leagueUrl, { headers });
       console.log('League response status:', leagueResponse.status);
@@ -205,7 +218,7 @@ const createFaceitAPI = (apiKey) => {
       }
 
       // If season not found in league data, try the direct season endpoint
-      const seasonUrl = `${FACEIT_API_BASE}/leagues/${leagueId}/seasons/${seasonId}`;
+      const seasonUrl = getApiUrl(`leagues/${leagueId}/seasons/${seasonId}`);
       console.log('Trying season endpoint:', seasonUrl);
       const seasonResponse = await fetch(seasonUrl, { headers });
       console.log('Season response status:', seasonResponse.status);
@@ -222,7 +235,7 @@ const createFaceitAPI = (apiKey) => {
     // Get leaderboard by ID
     getLeaderboard: async (leaderboardId, offset = 0, limit = 100) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/leaderboards/${leaderboardId}?offset=${offset}&limit=${limit}`,
+        getApiUrl(`leaderboards/${leaderboardId}?offset=${offset}&limit=${limit}`),
         { headers }
       );
       if (!response.ok) throw new Error('Failed to get leaderboard');
@@ -268,7 +281,7 @@ const createFaceitAPI = (apiKey) => {
     // Get championships (tournaments - different from leagues)
     getChampionships: async (offset = 0, limit = 20) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/championships?game=${GAME_ID}&offset=${offset}&limit=${limit}`,
+        getApiUrl(`championships?game=${GAME_ID}&offset=${offset}&limit=${limit}`),
         { headers }
       );
       if (!response.ok) throw new Error('Failed to get championships');
@@ -278,7 +291,7 @@ const createFaceitAPI = (apiKey) => {
     // Get championship details
     getChampionship: async (championshipId) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/championships/${championshipId}`,
+        getApiUrl(`championships/${championshipId}`),
         { headers }
       );
       if (!response.ok) throw new Error('Failed to get championship');
@@ -288,7 +301,7 @@ const createFaceitAPI = (apiKey) => {
     // Get teams in a championship
     getChampionshipTeams: async (championshipId, offset = 0, limit = 50) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/championships/${championshipId}/subscriptions?offset=${offset}&limit=${limit}`,
+        getApiUrl(`championships/${championshipId}/subscriptions?offset=${offset}&limit=${limit}`),
         { headers }
       );
       if (!response.ok) throw new Error('Failed to get championship teams');
@@ -298,7 +311,7 @@ const createFaceitAPI = (apiKey) => {
     // Get match details
     getMatch: async (matchId) => {
       const response = await fetch(
-        `${FACEIT_API_BASE}/matches/${matchId}`,
+        getApiUrl(`matches/${matchId}`),
         { headers }
       );
       if (!response.ok) throw new Error('Failed to get match');
