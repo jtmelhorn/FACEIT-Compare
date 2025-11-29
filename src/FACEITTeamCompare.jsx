@@ -952,115 +952,6 @@ const ApiKeyInput = ({ apiKey, setApiKey, onVerify, verificationStatus }) => {
 };
 
 
-// Veto Stats Component
-const VetoStats = ({ teamA, teamB }) => {
-  const getVetoStats = (team) => {
-    if (!team || !team.vetoStats) {
-      console.log('No veto stats found for team:', team?.name);
-      return null;
-    }
-
-    const { bans, picks, totalVetos } = team.vetoStats;
-    console.log('Veto data for', team.name, ':', { bans, picks, totalVetos });
-
-    // Check if we have any data
-    const hasBans = bans && Object.keys(bans).length > 0;
-    const hasPicks = picks && Object.keys(picks).length > 0;
-
-    if (!hasBans && !hasPicks) {
-      console.log('No bans or picks found for team:', team.name);
-      return null;
-    }
-
-    const sortedBans = hasBans ? Object.entries(bans).sort((a, b) => b[1] - a[1]) : [];
-    const sortedPicks = hasPicks ? Object.entries(picks).sort((a, b) => b[1] - a[1]) : [];
-
-    return {
-      mostVetoed: sortedBans[0] ? { map: sortedBans[0][0], count: sortedBans[0][1] } : null,
-      leastVetoed: sortedBans[sortedBans.length - 1] ? { map: sortedBans[sortedBans.length - 1][0], count: sortedBans[sortedBans.length - 1][1] } : null,
-      mostPicked: sortedPicks[0] ? { map: sortedPicks[0][0], count: sortedPicks[0][1] } : null,
-      totalVetos,
-      allBans: sortedBans,
-      allPicks: sortedPicks
-    };
-  };
-
-  const statsA = getVetoStats(teamA);
-  const statsB = teamB ? getVetoStats(teamB) : null;
-
-  const renderTeamStats = (stats, teamName) => {
-    if (!stats) {
-      return (
-        <div className="no-data">
-          <p>No veto data available for {teamName}</p>
-          <p style={{ fontSize: '12px', marginTop: '8px', opacity: 0.7 }}>
-            Veto data is only available for matches that include pick/ban information
-          </p>
-        </div>
-      );
-    }
-
-    return (
-      <div className="veto-stats-card">
-        <h4>{teamName} Veto Stats</h4>
-        <div className="stat-grid">
-          <div className="stat-item ban">
-            <span className="stat-label">Most Vetoed Map</span>
-            <span className="stat-value">{stats.mostVetoed ? stats.mostVetoed.map : 'N/A'}</span>
-            <span className="stat-count">{stats.mostVetoed ? `${stats.mostVetoed.count} bans` : ''}</span>
-          </div>
-          <div className="stat-item pick">
-            <span className="stat-label">Most Picked Map</span>
-            <span className="stat-value">{stats.mostPicked ? stats.mostPicked.map : 'N/A'}</span>
-            <span className="stat-count">{stats.mostPicked ? `${stats.mostPicked.count} picks` : ''}</span>
-          </div>
-          <div className="stat-item info">
-            <span className="stat-label">Total Recorded Vetos</span>
-            <span className="stat-value">{stats.totalVetos}</span>
-          </div>
-        </div>
-
-        {/* Show all bans and picks */}
-        <div className="veto-details">
-          {stats.allBans.length > 0 && (
-            <div className="veto-list">
-              <h5>Map Bans</h5>
-              {stats.allBans.map(([map, count]) => (
-                <div key={map} className="veto-list-item">
-                  <span className="map-name">{map}</span>
-                  <span className="count">{count} times</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {stats.allPicks.length > 0 && (
-            <div className="veto-list">
-              <h5>Map Picks</h5>
-              {stats.allPicks.map(([map, count]) => (
-                <div key={map} className="veto-list-item">
-                  <span className="map-name">{map}</span>
-                  <span className="count">{count} times</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="veto-stats-container">
-      <div className="veto-stats-wrapper">
-        {renderTeamStats(statsA, teamA.name)}
-        {teamB && <div className="vs-divider">VS</div>}
-        {teamB && renderTeamStats(statsB, teamB.name)}
-      </div>
-    </div>
-  );
-};
-
 // ============================================================================
 // MAIN APP COMPONENT
 // ============================================================================
@@ -1196,13 +1087,6 @@ export default function FACEITTeamCompare() {
 
       const fullTeamData = transformTeamData(teamDetails, teamStats, memberStats);
 
-      // Initialize veto stats
-      fullTeamData.vetoStats = {
-        bans: {},
-        picks: {},
-        totalVetos: 0
-      };
-
       // Fetch match history from ALL team members to get comprehensive match data
       try {
         const allMatchIds = new Set(); // Track unique match IDs
@@ -1266,61 +1150,15 @@ export default function FACEITTeamCompare() {
 
             // Find which faction is our team based on team name
             let opponentFaction = null;
-            let ourFactionId = null;
 
             if (faction1.name === teamDetails.name) {
               opponentFaction = faction2;
-              ourFactionId = faction1.faction_id;
             } else if (faction2.name === teamDetails.name) {
               opponentFaction = faction1;
-              ourFactionId = faction2.faction_id;
             } else {
               // Team name doesn't match - this is a pug or individual match, skip it
               stats.filtered++;
               return null;
-            }
-
-            // Process Veto Data
-            if (matchData.voting && matchData.voting.map) {
-              const mapVoting = matchData.voting.map;
-              const entities = mapVoting.entities || [];
-              const picks = mapVoting.pick || [];
-
-              if (Array.isArray(picks) && picks.length > 0) {
-                // Check if elements are objects
-                if (typeof picks[0] === 'object') {
-                  const bestOf = matchData.best_of || '1';
-                  picks.forEach((vote, index) => {
-                    if (vote.team_id === ourFactionId) {
-                      // Determine if Ban or Pick based on index and Format
-                      let action = 'unknown';
-                      if (bestOf === '1') {
-                        action = 'ban';
-                      } else if (bestOf === '3') {
-                        // BO3: Ban (0), Ban (1), Pick (2), Pick (3), Ban (4), Ban (5)...
-                        if (index === 0 || index === 1 || index === 4 || index === 5) {
-                          action = 'ban';
-                        } else if (index === 2 || index === 3) {
-                          action = 'pick';
-                        }
-                      }
-
-                      // Map GUID to Name
-                      const mapEntity = entities.find(e => e.guid === vote.guid);
-                      if (mapEntity) {
-                        const mapName = normalizeMapName(mapEntity.name || mapEntity.class_name);
-
-                        if (action === 'ban') {
-                          fullTeamData.vetoStats.bans[mapName] = (fullTeamData.vetoStats.bans[mapName] || 0) + 1;
-                        } else if (action === 'pick') {
-                          fullTeamData.vetoStats.picks[mapName] = (fullTeamData.vetoStats.picks[mapName] || 0) + 1;
-                        }
-                      }
-                    }
-                  });
-                  fullTeamData.vetoStats.totalVetos++;
-                }
-              }
             }
 
             // Use matchStats to get actual round data
@@ -1525,6 +1363,26 @@ export default function FACEITTeamCompare() {
             </div>
             <h1>FACEIT Compare</h1>
             <span className="brand-tag">CS2 Team Analytics</span>
+            <div className="support-links">
+              <a
+                href="https://paypal.me/jtm258"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="support-link paypal"
+                title="Buy me a coffee"
+              >
+                ☕
+              </a>
+              <a
+                href="https://steamcommunity.com/tradeoffer/new/?partner=112689034&token=1634oYnV"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="support-link steam"
+                title="Send a skin"
+              >
+                🎮
+              </a>
+            </div>
           </div>
 
           <ApiKeyInput
@@ -1596,12 +1454,6 @@ export default function FACEITTeamCompare() {
             >
               Map Stats
             </button>
-            <button
-              className={activeSection === 'veto_stats' ? 'active' : ''}
-              onClick={() => setActiveSection('veto_stats')}
-            >
-              Veto Stats
-            </button>
           </nav>
 
           <main className="main-content">
@@ -1664,19 +1516,6 @@ export default function FACEITTeamCompare() {
                   teamA={filteredTeamA}
                   teamB={null}
                   singleMode={true}
-                />
-              </section>
-            )}
-
-            {activeSection === 'veto_stats' && (
-              <section className="veto-stats-section">
-                <div className="section-header">
-                  <h2>Veto Statistics</h2>
-                  <p>Analysis of map bans and picks from match history</p>
-                </div>
-                <VetoStats
-                  teamA={filteredTeamA}
-                  teamB={null}
                 />
               </section>
             )}
@@ -1785,6 +1624,48 @@ export default function FACEITTeamCompare() {
           padding: 4px 10px;
           background: var(--bg-tertiary);
           border-radius: 20px;
+        }
+
+        /* Support Links */
+        .support-links {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-left: 12px;
+        }
+
+        .support-link {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 28px;
+          height: 28px;
+          font-size: 14px;
+          text-decoration: none;
+          border-radius: 6px;
+          transition: all 0.2s ease;
+          opacity: 0.7;
+        }
+
+        .support-link:hover {
+          opacity: 1;
+          transform: scale(1.1);
+        }
+
+        .support-link.paypal {
+          background: rgba(0, 112, 186, 0.15);
+        }
+
+        .support-link.paypal:hover {
+          background: rgba(0, 112, 186, 0.25);
+        }
+
+        .support-link.steam {
+          background: rgba(102, 192, 244, 0.15);
+        }
+
+        .support-link.steam:hover {
+          background: rgba(102, 192, 244, 0.25);
         }
 
         /* API Key Section */
@@ -3023,114 +2904,6 @@ export default function FACEITTeamCompare() {
           padding: 16px;
         }
 
-        /* Veto Timeline */
-        .veto-timeline {
-          background: var(--bg-card);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-lg);
-          padding: 24px;
-          margin-bottom: 24px;
-        }
-
-        .timeline-track {
-          display: flex;
-          gap: 12px;
-          overflow-x: auto;
-          padding-bottom: 16px;
-        }
-
-        .timeline-step {
-          flex: 0 0 auto;
-          width: 100px;
-          padding: 16px 12px;
-          background: var(--bg-secondary);
-          border: 2px solid var(--border-subtle);
-          border-radius: var(--radius-md);
-          text-align: center;
-          cursor: pointer;
-          transition: all 0.2s ease;
-        }
-
-        .timeline-step:hover {
-          transform: translateY(-4px);
-          box-shadow: var(--shadow-md);
-        }
-
-        .timeline-step.ban { border-color: var(--ban); background: rgba(239, 68, 68, 0.1); }
-        .timeline-step.pick { border-color: var(--pick); background: rgba(34, 197, 94, 0.1); }
-        .timeline-step.decider { border-color: var(--decider); background: rgba(245, 158, 11, 0.1); }
-
-        .step-number {
-          font-family: 'JetBrains Mono', monospace;
-          font-size: 10px;
-          font-weight: 600;
-          color: var(--text-muted);
-          margin-bottom: 4px;
-        }
-
-        .step-action {
-          font-size: 10px;
-          font-weight: 700;
-          letter-spacing: 1px;
-          margin-bottom: 8px;
-        }
-
-        .timeline-step.ban .step-action { color: var(--ban); }
-        .timeline-step.pick .step-action { color: var(--pick); }
-        .timeline-step.decider .step-action { color: var(--decider); }
-
-        .step-map {
-          font-size: 13px;
-          font-weight: 600;
-          color: var(--text-primary);
-          margin-bottom: 8px;
-        }
-
-        .step-team {
-          font-family: 'JetBrains Mono', monospace;
-          font-size: 11px;
-          font-weight: 600;
-          padding: 3px 8px;
-          border-radius: 4px;
-          display: inline-block;
-        }
-
-        .timeline-step.team-a .step-team { background: var(--team-a-dim); color: var(--team-a); }
-        .timeline-step.team-d .step-team { background: var(--bg-tertiary); color: var(--text-muted); }
-
-        .timeline-legend {
-          display: flex;
-          gap: 20px;
-          justify-content: center;
-          padding-top: 12px;
-          border-top: 1px solid var(--border-subtle);
-        }
-
-        .legend-item {
-          font-size: 11px;
-          font-weight: 600;
-          padding: 4px 12px;
-          border-radius: 4px;
-        }
-
-        .legend-item.ban { background: rgba(239, 68, 68, 0.15); color: var(--ban); }
-        .legend-item.pick { background: rgba(34, 197, 94, 0.15); color: var(--pick); }
-        .legend-item.decider { background: rgba(245, 158, 11, 0.15); color: var(--decider); }
-
-        .veto-tooltip {
-          text-align: center;
-        }
-
-        .veto-reason {
-          font-size: 12px;
-          color: var(--text-primary);
-          margin-bottom: 4px;
-        }
-
-        .veto-team {
-          font-size: 11px;
-          color: var(--text-muted);
-        }
 
 
 
@@ -3697,163 +3470,6 @@ export default function FACEITTeamCompare() {
           }
         }
 
-        /* Veto Stats */
-        .veto-stats-container {
-          display: flex;
-          flex-direction: column;
-          gap: 20px;
-        }
-
-        .veto-stats-wrapper {
-          display: flex;
-          gap: 24px;
-          align-items: stretch;
-        }
-
-        .veto-stats-card {
-          flex: 1;
-          background: var(--bg-secondary);
-          border: 1px solid var(--border-medium);
-          border-radius: var(--radius-md);
-          padding: 20px;
-        }
-
-        .veto-stats-card h4 {
-          font-size: 16px;
-          font-weight: 600;
-          color: var(--text-primary);
-          margin-bottom: 16px;
-          padding-bottom: 12px;
-          border-bottom: 1px solid var(--border-subtle);
-        }
-
-        .stat-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-          gap: 16px;
-        }
-
-        .stat-item {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          padding: 12px;
-          border-radius: var(--radius-sm);
-          background: var(--bg-tertiary);
-          border: 1px solid var(--border-subtle);
-        }
-
-        .stat-item.ban {
-          border-left: 3px solid var(--ban);
-        }
-
-        .stat-item.pick {
-          border-left: 3px solid var(--pick);
-        }
-
-        .stat-item.info {
-          border-left: 3px solid var(--text-muted);
-        }
-
-        .stat-label {
-          font-size: 11px;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-          color: var(--text-secondary);
-        }
-
-        .stat-value {
-          font-size: 18px;
-          font-weight: 700;
-          color: var(--text-primary);
-        }
-
-        .stat-count {
-          font-size: 12px;
-          color: var(--text-muted);
-        }
-
-        .vs-divider {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-weight: 800;
-          font-size: 14px;
-          color: var(--text-muted);
-          background: var(--bg-tertiary);
-          width: 40px;
-          height: 40px;
-          border-radius: 50%;
-          align-self: center;
-          flex-shrink: 0;
-          border: 1px solid var(--border-medium);
-        }
-
-        .veto-details {
-          margin-top: 20px;
-          padding-top: 20px;
-          border-top: 1px solid var(--border-subtle);
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 16px;
-        }
-
-        .veto-list h5 {
-          font-size: 13px;
-          font-weight: 600;
-          color: var(--text-secondary);
-          margin-bottom: 12px;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-
-        .veto-list-item {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 8px 12px;
-          background: var(--bg-tertiary);
-          border-radius: var(--radius-sm);
-          margin-bottom: 6px;
-        }
-
-        .veto-list-item .map-name {
-          font-size: 13px;
-          font-weight: 500;
-          color: var(--text-primary);
-        }
-
-        .veto-list-item .count {
-          font-size: 12px;
-          color: var(--text-muted);
-          font-family: var(--font-mono);
-        }
-
-        .no-data {
-          text-align: center;
-          padding: 40px 20px;
-          color: var(--text-muted);
-          background: var(--bg-tertiary);
-          border-radius: var(--radius-md);
-        }
-
-        .no-data p {
-          margin: 0;
-        }
-
-        @media (max-width: 768px) {
-          .veto-stats-wrapper {
-            flex-direction: column;
-          }
-
-          .vs-divider {
-            margin: 0 auto;
-          }
-
-          .veto-details {
-            grid-template-columns: 1fr;
-          }
-        }
       `}</style>
     </div >
   );
