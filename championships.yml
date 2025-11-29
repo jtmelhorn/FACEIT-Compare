@@ -1,0 +1,195 @@
+Organization: 08b06cfc-74d0-454b-9a51-feda4b6b18da
+Open:
+  Season55:
+    East:
+      - cf467944-9b2c-4f28-a7e4-d61743b1ace3 # East Reg
+      - 9bb605e6-0961-4b02-9645-591ed6c6606c # East Reg
+      - c4bac4c6-7beb-4293-84e2-d6f1b83bd8f5 # Central
+      - b3c1cdc7-0d9b-4f77-887e-d87d1446316b # Central
+      - f6aed6b4-4fd4-4cd9-b2eb-83d5788b0b21 # Central
+    West:
+      - bfddebc6-0ed1-4920-8650-a13da5653ec2 # West Reg
+      - e443aaed-0bed-48e3-920f-ad9c5b97c113 # West Reg
+      - c4bac4c6-7beb-4293-84e2-d6f1b83bd8f5 # Central
+      - b3c1cdc7-0d9b-4f77-887e-d87d1446316b # Central
+      - f6aed6b4-4fd4-4cd9-b2eb-83d5788b0b21 # Central
+  Season54:
+    East:
+      - f5beecd8-cfd5-403f-b026-11d16ca716d8 # East Reg
+      - 18477ccc-39c2-41c4-b768-150fc0e15182 # East Reg
+      - 1e69e298-5124-4e3a-adde-cd9b92972648 # Central
+      - edd94ba8-8106-470b-9aae-3539cb237b67 # Central
+      - b698bf94-0dcb-487e-adec-85ae4ec7b12c # Central
+    West:
+      - f5aec3e5-57e5-4dde-a9d5-4e630766bc14 # West Reg
+      - 79220013-5def-493c-ae3a-988d46d9249d # West Reg
+      - 1e69e298-5124-4e3a-adde-cd9b92972648 # Central
+      - edd94ba8-8106-470b-9aae-3539cb237b67 # Central
+      - b698bf94-0dcb-487e-adec-85ae4ec7b12c # Central
+  Season53:
+    East:
+      - 8c1d18a3-cae9-4909-9e2b-fbce224dca98 # East Reg
+      - 0fe63838-3538-4a2a-997f-c02ddf43b7e1 # East Reg
+      - 3a5afd9c-5858-43bc-9475-73d67cbc0782 # Central
+      - 30aeab32-6f6b-435b-8fc5-4576cbe96a73 # Central
+      - f033930c-5ca0-4e04-b514-96d28da5d412 # Central
+    West:
+      - fb030065-f0c0-43d9-ac09-ab63bb374157 # West Reg
+      - c8e3f865-a597-4b8e-a7ae-f702c3c2cda9 # West Reg
+      - 3a5afd9c-5858-43bc-9475-73d67cbc0782 # Central
+      - 30aeab32-6f6b-435b-8fc5-4576cbe96a73 # Central
+      - f033930c-5ca0-4e04-b514-96d28da5d412 # Central
+  Season52:
+    East:
+      - cb4ce836-0a61-4da9-973c-48764798c9ea # East Reg
+      - 4fd5b429-3f1f-41c3-aa0b-83a75ed6f131 # East Reg
+      - 9066abd4-6299-46b7-a8ae-25a3ea129b0d # Central
+      - ce266fe9-8624-45b4-a725-ff3ef822f213 # Central
+    West:
+      - e242eb4a-5d2a-4910-a969-ea870d60b7c1 # West Reg
+      - 7dcab858-7b80-4221-9f77-45cd42d0b456 # West Reg
+      - 9066abd4-6299-46b7-a8ae-25a3ea129b0d # Central
+      - ce266fe9-8624-45b4-a725-ff3ef822f213 # Central
+  Season51:
+    East:
+      - f8127e17-70f6-4b42-a71b-f8d41f26a2b3 # East Reg
+      - 4eb50d99-2f0e-4b0e-8500-fb9c14e23c4e # Central
+    West:
+      - 4eb50d99-2f0e-4b0e-8500-fb9c14e23c4e # Central
+  Season50:
+    East:
+      - 050f4148-8bd0-4f82-95a9-35bdc31a8a5d # East Reg
+      - 1c613fe4-9031-4f4e-a9b9-3a39f01ab9ba # Central
+    West:
+      - 1c613fe4-9031-4f4e-a9b9-3a39f01ab9ba # Central
+
+Intermediate:
+  Season55:
+    East:
+      - 4e4b0ed1-7b4a-4bb5-8a67-d51ee1e1f78f # Central
+      - 49dab447-a2f9-4eae-b639-edad8c6efe66 # Central
+      - c37070da-a791-4423-be4a-4d65e1270c84 # Central
+      - fef2cd4f-be05-47d0-905c-0a77e792459c # Qualifier (Treated as Central)
+    West:
+      - 4e4b0ed1-7b4a-4bb5-8a67-d51ee1e1f78f # Central
+      - 49dab447-a2f9-4eae-b639-edad8c6efe66 # Central
+      - c37070da-a791-4423-be4a-4d65e1270c84 # Central
+      - fef2cd4f-be05-47d0-905c-0a77e792459c # Qualifier (Treated as Central)
+  Season54:
+    East:
+      - 82ed3bfd-5ffe-45fe-b731-4a6d0e9d6023 # Central
+      - 0c1907df-de6b-418e-8295-7dd897ebd722 # Central
+      - 8d4dc3a2-4572-411d-adf8-c7badd1496f3 # Central
+      - 7a4281fc-8643-4131-b823-d614e533f6f9 # Qualifier
+    West:
+      - 82ed3bfd-5ffe-45fe-b731-4a6d0e9d6023 # Central
+      - 0c1907df-de6b-418e-8295-7dd897ebd722 # Central
+      - 8d4dc3a2-4572-411d-adf8-c7badd1496f3 # Central
+      - 7a4281fc-8643-4131-b823-d614e533f6f9 # Qualifier
+  Season53:
+    East:
+      - 39fbf5b5-e507-49c9-99f9-27f6d51aa136 # Central
+      - 5427b03e-92b7-4332-9452-062f24da90bc # Central
+      - 6ce0d130-15fd-4d65-acb5-7fb8d6c9a5c9 # Central
+      - 71cd9d21-e7b2-439f-b473-40014243efd8 # Qualifier
+    West:
+      - 39fbf5b5-e507-49c9-99f9-27f6d51aa136 # Central
+      - 5427b03e-92b7-4332-9452-062f24da90bc # Central
+      - 6ce0d130-15fd-4d65-acb5-7fb8d6c9a5c9 # Central
+      - 71cd9d21-e7b2-439f-b473-40014243efd8 # Qualifier
+  Season52:
+    East:
+      - c36f31b6-c448-49a5-bfdc-add7666de250 # East Reg
+      - 932241c8-9472-4bdb-b65b-554043108d75 # Central
+      - 5fc995d2-3c8e-470e-b1d5-9f3a009aa7d3 # Qualifier
+      - 8ca7e547-1577-4983-8b28-11818276a277 # Central
+    West:
+      - 3b2f4f4e-1462-45d4-90bf-7f6b604bf22c # West Reg
+      - 932241c8-9472-4bdb-b65b-554043108d75 # Central
+      - 5fc995d2-3c8e-470e-b1d5-9f3a009aa7d3 # Qualifier
+      - 8ca7e547-1577-4983-8b28-11818276a277 # Central
+  Season51:
+    East:
+      - c3e79f5b-d83d-4aee-87ee-cdfad2283cf0 # East Reg
+      - e8a01d35-63a6-4bae-894e-8b37fe742d76 # Qualifier
+      - 5999e1b7-b6cb-4b19-94ba-34d7548a0854 # Central
+      - 87930816-91d1-43e1-a731-24d5aebf1aa8 # Central
+      - c507e3d6-fcb0-4751-87e4-b2735e470ccf # Central
+    West:
+      - e8a01d35-63a6-4bae-894e-8b37fe742d76 # Qualifier
+      - 5999e1b7-b6cb-4b19-94ba-34d7548a0854 # Central
+      - 87930816-91d1-43e1-a731-24d5aebf1aa8 # Central
+      - c507e3d6-fcb0-4751-87e4-b2735e470ccf # Central
+  Season50:
+    East:
+      - 58d2e73f-8e96-4e0f-8c5e-17deb834b4c6 # East Reg
+      - 60a4358c-714b-468d-9f29-e6fa8813f220 # Central
+      - f149ecc9-9c83-40a7-aea8-f8edc76c1b0a # Central
+    West:
+      - 60a4358c-714b-468d-9f29-e6fa8813f220 # Central
+      - f149ecc9-9c83-40a7-aea8-f8edc76c1b0a # Central
+
+Main:
+  Season55:
+    East:
+      - 4597d777-3e7b-4c67-b636-55a8f0b537e7 # Central
+      - c5749517-d0b9-4d12-aec1-329393db934b # Central
+    West:
+      - 4597d777-3e7b-4c67-b636-55a8f0b537e7 # Central
+      - c5749517-d0b9-4d12-aec1-329393db934b # Central
+  Season54:
+    East:
+      - 1dcf4db9-19e7-4e82-850e-cbfacd6f8376 # Central
+      - f1acb470-94dc-4927-9324-17305b8119f3 # Qualifier
+      - cea8dc93-2960-4e37-a2b4-c3e41868d2ad # Central
+    West:
+      - 1dcf4db9-19e7-4e82-850e-cbfacd6f8376 # Central
+      - f1acb470-94dc-4927-9324-17305b8119f3 # Qualifier
+      - cea8dc93-2960-4e37-a2b4-c3e41868d2ad # Central
+  Season53:
+    East:
+      - 251a5e40-772f-46b7-ba71-382459449e68 # Central
+    West:
+      - 251a5e40-772f-46b7-ba71-382459449e68 # Central
+  Season52:
+    East:
+      - c9f295b8-f68d-492b-bc38-75628dd91103 # Central
+      - 6e77f85a-be5d-4603-8f77-65f5656816ab # Central
+      - 1760b445-e2cf-448f-b8a2-ac2aef6b1fe0 # Central
+    West:
+      - c9f295b8-f68d-492b-bc38-75628dd91103 # Central
+      - 6e77f85a-be5d-4603-8f77-65f5656816ab # Central
+      - 1760b445-e2cf-448f-b8a2-ac2aef6b1fe0 # Central
+  Season51:
+    East:
+      - 3501196b-cc9a-4f5d-800b-7e662ff81778 # Central
+      - 466e4901-881f-4d80-bbf0-9f86e9336eaa # Central
+    West:
+      - 3501196b-cc9a-4f5d-800b-7e662ff81778 # Central
+      - 466e4901-881f-4d80-bbf0-9f86e9336eaa # Central
+  Season50:
+    East:
+      - 21d8c709-3804-4d71-8af9-a17c70471587 # Central
+      - 38519d06-819b-4c8f-9d6c-21bea55676be # Central
+    West:
+      - 21d8c709-3804-4d71-8af9-a17c70471587 # Central
+      - 38519d06-819b-4c8f-9d6c-21bea55676be # Central
+
+Advanced:
+  Season55:
+    East:
+      - a26bb81c-4dc0-4a87-ae24-987368290bda # Central
+      - 7ab823da-ab0c-41fb-a226-9a7323484b51 # Central
+    West:
+      - a26bb81c-4dc0-4a87-ae24-987368290bda # Central
+      - 7ab823da-ab0c-41fb-a226-9a7323484b51 # Central
+  Season54:
+    East:
+      - 49e7fd30-ae54-469c-ac03-ce5a6ecbe2eb # Central
+    West:
+      - 49e7fd30-ae54-469c-ac03-ce5a6ecbe2eb # Central
+  Season53:
+    East:
+      - bb5a00bd-411c-4618-a156-92374635093a # Central
+    West:
+      - bb5a00bd-411c-4618-a156-92374635093a # Central

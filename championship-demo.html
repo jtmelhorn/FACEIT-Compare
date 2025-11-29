@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Championship System Demo</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #0f1419;
+      color: #e4e6eb;
+    }
+    .container {
+      background: #1c2128;
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 20px;
+      border: 1px solid #30363d;
+    }
+    h1 {
+      color: #58a6ff;
+      margin-top: 0;
+    }
+    h2 {
+      color: #79c0ff;
+      border-bottom: 1px solid #30363d;
+      padding-bottom: 8px;
+    }
+    button {
+      background: #238636;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+    button:hover {
+      background: #2ea043;
+    }
+    button.secondary {
+      background: #1f6feb;
+    }
+    button.secondary:hover {
+      background: #388bfd;
+    }
+    input, select {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      color: #e4e6eb;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+    .controls {
+      margin-bottom: 20px;
+    }
+    #output {
+      background: #0d1117;
+      padding: 16px;
+      border-radius: 6px;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      max-height: 500px;
+      overflow-y: auto;
+      border: 1px solid #30363d;
+    }
+    #progress {
+      background: #0d1117;
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+      border: 1px solid #30363d;
+      display: none;
+    }
+    .progress-bar {
+      background: #21262d;
+      height: 20px;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .progress-fill {
+      background: linear-gradient(90deg, #238636, #2ea043);
+      height: 100%;
+      transition: width 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 12px;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .stat-card {
+      background: #0d1117;
+      padding: 12px;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+    }
+    .stat-label {
+      color: #8b949e;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .stat-value {
+      color: #58a6ff;
+      font-size: 24px;
+      font-weight: bold;
+    }
+    .error {
+      color: #f85149;
+    }
+    .success {
+      color: #3fb950;
+    }
+  </style>
+</head>
+<body>
+  <h1>🏆 Championship System Demo</h1>
+
+  <div class="container">
+    <h2>Controls</h2>
+    <div class="controls">
+      <select id="division">
+        <option value="Open">Open</option>
+        <option value="Intermediate">Intermediate</option>
+        <option value="Main">Main</option>
+        <option value="Advanced">Advanced</option>
+      </select>
+
+      <select id="season">
+        <option value="55">Season 55</option>
+        <option value="54">Season 54</option>
+        <option value="53">Season 53</option>
+        <option value="52">Season 52</option>
+        <option value="51">Season 51</option>
+        <option value="50">Season 50</option>
+      </select>
+
+      <button onclick="fetchData()">🚀 Fetch Data</button>
+      <button onclick="loadFromCache()" class="secondary">📂 Load Cache</button>
+      <button onclick="clearCache()" class="secondary">🗑️ Clear Cache</button>
+      <button onclick="downloadDB()" class="secondary">💾 Download</button>
+    </div>
+
+    <div class="controls">
+      <input type="text" id="teamSearch" placeholder="Search teams..." style="width: 300px">
+      <button onclick="searchTeams()">🔍 Search Teams</button>
+
+      <input type="text" id="playerSearch" placeholder="Search players..." style="width: 300px">
+      <button onclick="searchPlayers()">🔍 Search Players</button>
+    </div>
+
+    <div id="progress">
+      <div id="progressText">Initializing...</div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill" style="width: 0%">0%</div>
+      </div>
+    </div>
+
+    <div id="stats" style="display: none;">
+      <h2>Database Statistics</h2>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Matches</div>
+          <div class="stat-value" id="statMatches">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Teams</div>
+          <div class="stat-value" id="statTeams">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Players</div>
+          <div class="stat-value" id="statPlayers">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Championships</div>
+          <div class="stat-value" id="statChampionships">-</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <h2>Output</h2>
+    <div id="output">Ready. Select division/season and click "Fetch Data" to start.</div>
+  </div>
+
+  <script type="module">
+    import { ChampionshipOrchestrator } from './src/championshipOrchestrator.js';
+    import { searchTeamsByName, searchPlayersByName } from './src/championshipDatabase.js';
+
+    // Global state
+    window.currentOrchestrator = null;
+
+    // Fetch data
+    window.fetchData = async function() {
+      const division = document.getElementById('division').value;
+      const season = document.getElementById('season').value;
+
+      log(`Starting fetch for ${division} Season ${season}...`);
+      showProgress();
+
+      try {
+        const orchestrator = new ChampionshipOrchestrator();
+        window.currentOrchestrator = orchestrator;
+
+        orchestrator.setProgressCallbacks({
+          onConfigLoad: (div, seas) => {
+            updateProgress(10, `Loading config for ${div} Season ${seas}...`);
+          },
+          onChampionshipFetch: (current, total, id) => {
+            const percent = 10 + Math.floor((current / total) * 70);
+            updateProgress(percent, `Fetching championship ${current}/${total}...`);
+          },
+          onDatabaseBuild: () => {
+            updateProgress(90, 'Building database...');
+          },
+          onComplete: (db) => {
+            updateProgress(100, 'Complete!');
+            hideProgress();
+            showStats(db);
+            log(`<span class="success">✅ Success!</span>\n${JSON.stringify(db.metadata, null, 2)}`);
+
+            // Auto-save to cache
+            orchestrator.saveToLocalStorage(`championship_${division.toLowerCase()}_s${season}`);
+            log(`<span class="success">💾 Saved to cache</span>`);
+          }
+        });
+
+        await orchestrator.processChampionships(division, season);
+      } catch (error) {
+        hideProgress();
+        log(`<span class="error">❌ Error: ${error.message}</span>`);
+        console.error(error);
+      }
+    };
+
+    // Load from cache
+    window.loadFromCache = function() {
+      const division = document.getElementById('division').value;
+      const season = document.getElementById('season').value;
+      const cacheKey = `championship_${division.toLowerCase()}_s${season}`;
+
+      log(`Loading from cache: ${cacheKey}...`);
+
+      try {
+        const orchestrator = new ChampionshipOrchestrator();
+        if (orchestrator.loadFromLocalStorage(cacheKey)) {
+          window.currentOrchestrator = orchestrator;
+          const db = orchestrator.getDatabase();
+          showStats(db);
+          log(`<span class="success">✅ Loaded from cache</span>\n${JSON.stringify(db.metadata, null, 2)}`);
+        } else {
+          log(`<span class="error">❌ No cache found for ${cacheKey}</span>`);
+        }
+      } catch (error) {
+        log(`<span class="error">❌ Error: ${error.message}</span>`);
+      }
+    };
+
+    // Clear cache
+    window.clearCache = function() {
+      const division = document.getElementById('division').value;
+      const season = document.getElementById('season').value;
+      const cacheKey = `championship_${division.toLowerCase()}_s${season}`;
+
+      if (window.currentOrchestrator) {
+        window.currentOrchestrator.clearLocalStorage(cacheKey);
+        log(`<span class="success">✅ Cache cleared for ${cacheKey}</span>`);
+      } else {
+        localStorage.removeItem(cacheKey);
+        log(`<span class="success">✅ Cache cleared</span>`);
+      }
+    };
+
+    // Download database
+    window.downloadDB = function() {
+      if (!window.currentOrchestrator || !window.currentOrchestrator.getDatabase()) {
+        log(`<span class="error">❌ No database to download. Fetch data first.</span>`);
+        return;
+      }
+
+      const division = document.getElementById('division').value;
+      const season = document.getElementById('season').value;
+      const filename = `${division.toLowerCase()}_s${season}_database.json`;
+
+      window.currentOrchestrator.downloadDatabase(filename);
+      log(`<span class="success">✅ Database downloaded: ${filename}</span>`);
+    };
+
+    // Search teams
+    window.searchTeams = function() {
+      const searchTerm = document.getElementById('teamSearch').value;
+      if (!searchTerm) {
+        log(`<span class="error">❌ Enter a team name to search</span>`);
+        return;
+      }
+
+      if (!window.currentOrchestrator || !window.currentOrchestrator.getDatabase()) {
+        log(`<span class="error">❌ No database loaded. Fetch data first.</span>`);
+        return;
+      }
+
+      const db = window.currentOrchestrator.getDatabase();
+      const teams = searchTeamsByName(db, searchTerm);
+
+      if (teams.length === 0) {
+        log(`<span class="error">❌ No teams found for "${searchTerm}"</span>`);
+      } else {
+        log(`<span class="success">✅ Found ${teams.length} team(s):</span>\n\n${JSON.stringify(teams, null, 2)}`);
+      }
+    };
+
+    // Search players
+    window.searchPlayers = function() {
+      const searchTerm = document.getElementById('playerSearch').value;
+      if (!searchTerm) {
+        log(`<span class="error">❌ Enter a player name to search</span>`);
+        return;
+      }
+
+      if (!window.currentOrchestrator || !window.currentOrchestrator.getDatabase()) {
+        log(`<span class="error">❌ No database loaded. Fetch data first.</span>`);
+        return;
+      }
+
+      const db = window.currentOrchestrator.getDatabase();
+      const players = searchPlayersByName(db, searchTerm);
+
+      if (players.length === 0) {
+        log(`<span class="error">❌ No players found for "${searchTerm}"</span>`);
+      } else {
+        log(`<span class="success">✅ Found ${players.length} player(s):</span>\n\n${JSON.stringify(players, null, 2)}`);
+      }
+    };
+
+    // UI helpers
+    function log(message) {
+      document.getElementById('output').innerHTML = message;
+    }
+
+    function showProgress() {
+      document.getElementById('progress').style.display = 'block';
+    }
+
+    function hideProgress() {
+      document.getElementById('progress').style.display = 'none';
+    }
+
+    function updateProgress(percent, text) {
+      document.getElementById('progressFill').style.width = percent + '%';
+      document.getElementById('progressFill').textContent = percent + '%';
+      document.getElementById('progressText').textContent = text;
+    }
+
+    function showStats(db) {
+      document.getElementById('stats').style.display = 'block';
+      document.getElementById('statMatches').textContent = db.metadata.totalMatches;
+      document.getElementById('statTeams').textContent = db.metadata.totalTeams;
+      document.getElementById('statPlayers').textContent = db.metadata.totalPlayers;
+      document.getElementById('statChampionships').textContent = db.metadata.championships.length;
+    }
+  </script>
+</body>
+</html>
