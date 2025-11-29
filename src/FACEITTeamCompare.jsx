@@ -1654,11 +1654,11 @@ export default function FACEITTeamCompare() {
         .support-links {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 4px;
         }
 
         .support-label {
-          font-size: 11px;
+          font-size: 9px;
           font-weight: 500;
           color: var(--text-secondary);
           letter-spacing: 0.3px;
@@ -1667,12 +1667,12 @@ export default function FACEITTeamCompare() {
         .support-link {
           display: inline-flex;
           align-items: center;
-          gap: 4px;
-          padding: 6px 10px;
-          font-size: 11px;
+          gap: 3px;
+          padding: 4px 6px;
+          font-size: 9px;
           font-weight: 500;
           text-decoration: none;
-          border-radius: var(--radius-sm);
+          border-radius: 4px;
           transition: all 0.2s ease;
           white-space: nowrap;
         }
@@ -1680,25 +1680,25 @@ export default function FACEITTeamCompare() {
         .support-link.paypal {
           color: #ffffff;
           background: linear-gradient(135deg, #0070BA 0%, #1F94C7 100%);
-          box-shadow: 0 1px 4px rgba(0, 112, 186, 0.25);
+          box-shadow: 0 1px 3px rgba(0, 112, 186, 0.2);
         }
 
         .support-link.paypal:hover {
           transform: translateY(-1px);
-          box-shadow: 0 2px 8px rgba(0, 112, 186, 0.4);
+          box-shadow: 0 2px 6px rgba(0, 112, 186, 0.3);
         }
 
         .support-link.steam {
           color: #ffffff;
           background: linear-gradient(135deg, #1b2838 0%, #2a475e 100%);
-          border: 1px solid rgba(102, 192, 244, 0.3);
-          box-shadow: 0 1px 4px rgba(102, 192, 244, 0.15);
+          border: 1px solid rgba(102, 192, 244, 0.25);
+          box-shadow: 0 1px 3px rgba(102, 192, 244, 0.1);
         }
 
         .support-link.steam:hover {
           transform: translateY(-1px);
-          box-shadow: 0 2px 8px rgba(102, 192, 244, 0.3);
-          border-color: rgba(102, 192, 244, 0.6);
+          box-shadow: 0 2px 6px rgba(102, 192, 244, 0.25);
+          border-color: rgba(102, 192, 244, 0.5);
         }
 
         /* API Key Section */
@@ -3519,7 +3519,7 @@ export default function FACEITTeamCompare() {
         .app-footer {
           background: var(--bg-secondary);
           border-top: 1px solid var(--border-subtle);
-          padding: 16px 32px;
+          padding: 8px 32px;
           margin-top: 40px;
         }
 
@@ -3529,11 +3529,11 @@ export default function FACEITTeamCompare() {
           display: flex;
           justify-content: center;
           align-items: center;
-          gap: 12px;
+          gap: 8px;
         }
 
         .footer-content p {
-          font-size: 11px;
+          font-size: 9px;
           color: var(--text-secondary);
           margin: 0;
         }
@@ -3541,15 +3541,15 @@ export default function FACEITTeamCompare() {
         .github-link {
           display: inline-flex;
           align-items: center;
-          gap: 6px;
-          padding: 6px 12px;
-          font-size: 11px;
+          gap: 4px;
+          padding: 4px 8px;
+          font-size: 9px;
           font-weight: 500;
           color: var(--text-primary);
           text-decoration: none;
           background: var(--bg-tertiary);
           border: 1px solid var(--border-medium);
-          border-radius: var(--radius-sm);
+          border-radius: 4px;
           transition: all 0.2s ease;
         }
 
@@ -3557,13 +3557,13 @@ export default function FACEITTeamCompare() {
           background: var(--bg-hover);
           border-color: var(--faceit-orange);
           transform: translateY(-1px);
-          box-shadow: 0 2px 8px rgba(255, 85, 0, 0.15);
+          box-shadow: 0 2px 6px rgba(255, 85, 0, 0.12);
         }
 
         .github-link svg {
           flex-shrink: 0;
-          width: 16px;
-          height: 16px;
+          width: 12px;
+          height: 12px;
         }
 
       `}</style>
