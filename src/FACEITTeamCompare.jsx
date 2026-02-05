@@ -357,6 +357,139 @@ const normalizeMapName = (name) => {
   return nameMap[normalized] || name;
 };
 
+const toDisplayMapName = (rawName) => {
+  if (!rawName || typeof rawName !== 'string') return null;
+  if (MAP_DISPLAY_NAMES[rawName]) return MAP_DISPLAY_NAMES[rawName];
+
+  const trimmed = rawName.replace(/^de_/, '').replace(/_/g, ' ');
+  const compact = trimmed
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join('');
+
+  return normalizeMapName(compact);
+};
+
+const createEmptyVetoStats = () => ({
+  totalMatches: 0,
+  matchesWithVeto: 0,
+  totalVetoes: 0,
+  counts: {},
+  mostVetoed: null,
+  alwaysSame: false,
+});
+
+const extractVetoesFromVoting = (voting, teamLookup) => {
+  if (!voting) return [];
+
+  const mapVoting = voting.map || voting.maps || voting.veto || voting;
+  const actions = [];
+
+  const pushEntries = (entries, type) => {
+    if (!Array.isArray(entries)) return;
+
+    entries.forEach((entry) => {
+      let mapName = null;
+      let teamId = null;
+      let teamName = null;
+
+      if (typeof entry === 'string') {
+        mapName = entry;
+      } else if (entry) {
+        mapName = entry.map || entry.name || entry.entity_id || entry.entity_name || entry.map_name;
+        teamId = entry.team_id || entry.teamId || entry.faction_id;
+        teamName = entry.team_name || entry.teamName || entry.faction_name;
+      }
+
+      if (teamId && !teamName && teamLookup?.[teamId]) {
+        teamName = teamLookup[teamId];
+      }
+
+      if (!mapName) return;
+
+      actions.push({
+        map: mapName,
+        type,
+        teamId,
+        teamName,
+      });
+    });
+  };
+
+  pushEntries(mapVoting.pick || mapVoting.picks || mapVoting.picked, 'pick');
+  pushEntries(mapVoting.drop || mapVoting.drops || mapVoting.ban || mapVoting.bans || mapVoting.veto || mapVoting.vetoes, 'ban');
+
+  if (Array.isArray(mapVoting)) {
+    pushEntries(mapVoting, 'ban');
+  }
+
+  if (Array.isArray(mapVoting?.votes)) {
+    pushEntries(mapVoting.votes, mapVoting.vote_type || 'ban');
+  }
+
+  return actions;
+};
+
+const computeVetoStats = (matches, teamId, teamName) => {
+  if (!Array.isArray(matches) || matches.length === 0) {
+    return createEmptyVetoStats();
+  }
+
+  const uniqueMatches = new Map();
+  matches.forEach((match) => {
+    const key = match.originalMatchId || match.matchId;
+    if (!uniqueMatches.has(key)) {
+      uniqueMatches.set(key, match);
+    }
+  });
+
+  const counts = {};
+  let totalVetoes = 0;
+  let matchesWithVeto = 0;
+
+  const isSameTeam = (veto) => {
+    if (veto.teamId && teamId && veto.teamId.toString() === teamId.toString()) return true;
+    if (veto.teamName && teamName && veto.teamName.toLowerCase() === teamName.toLowerCase()) return true;
+    return false;
+  };
+
+  uniqueMatches.forEach((match) => {
+    const vetoes = Array.isArray(match.vetoes) ? match.vetoes : [];
+    if (vetoes.length > 0) {
+      matchesWithVeto += 1;
+    }
+
+    vetoes.forEach((veto) => {
+      if (!veto || !isSameTeam(veto)) return;
+      if (veto.type && veto.type !== 'ban' && veto.type !== 'veto' && veto.type !== 'drop') return;
+
+      const mapName = toDisplayMapName(veto.map);
+      if (!mapName) return;
+
+      counts[mapName] = (counts[mapName] || 0) + 1;
+      totalVetoes += 1;
+    });
+  });
+
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const most = sorted[0]
+    ? {
+      map: sorted[0][0],
+      count: sorted[0][1],
+      pct: totalVetoes > 0 ? Math.round((sorted[0][1] / totalVetoes) * 100) : 0,
+    }
+    : null;
+
+  return {
+    totalMatches: uniqueMatches.size,
+    matchesWithVeto,
+    totalVetoes,
+    counts,
+    mostVetoed: most,
+    alwaysSame: Boolean(most && totalVetoes > 0 && most.count === totalVetoes),
+  };
+};
+
 const getTeamPlayerIdsFromMatchStats = (matchStats, teamId, teamName) => {
   if (!matchStats || !Array.isArray(matchStats.rounds)) {
     return [];
@@ -446,10 +579,7 @@ const transformTeamData = (teamDetails, teamStats, memberStats) => {
     roster,
     mapStats,
     recentMatches: [], // Populated separately from match history
-    vetoPatterns: {
-      firstBans: {}, // Map name -> count of times banned first
-      firstPicks: {}, // Map name -> count of times picked first
-    },
+    vetoStats: createEmptyVetoStats(),
   };
 };
 
@@ -662,6 +792,8 @@ const TeamCard = ({ team, side, selectedSeason }) => {
     ? Math.round(team.roster.reduce((s, p) => s + p.winRate, 0) / team.roster.length)
     : 0;
   const rosterInfo = team.rosterFilterInfo;
+  const vetoStats = team.vetoStats || createEmptyVetoStats();
+  const vetoEntries = Object.entries(vetoStats.counts).sort((a, b) => b[1] - a[1]);
 
   return (
     <div className={`team-card ${side}`}>
@@ -769,6 +901,34 @@ const TeamCard = ({ team, side, selectedSeason }) => {
           </div>
         </>
       )}
+
+      <div className="section-title">Most Frequent Vetoes</div>
+      <div className="veto-summary">
+        {vetoStats.totalVetoes > 0 ? (
+          <>
+            <div className="veto-meta">
+              Based on {vetoStats.matchesWithVeto} matches with veto data
+            </div>
+            <div className="veto-list">
+              {vetoEntries.slice(0, 5).map(([map, count]) => (
+                <div key={map} className="veto-row">
+                  <span className="veto-map">{map}</span>
+                  <span className="veto-count">
+                    {count} ({Math.round((count / vetoStats.totalVetoes) * 100)}%)
+                  </span>
+                </div>
+              ))}
+            </div>
+            {vetoStats.alwaysSame && vetoStats.mostVetoed ? (
+              <div className="veto-note">
+                Always vetoes {vetoStats.mostVetoed.map}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="no-data">No veto data available for this season.</div>
+        )}
+      </div>
     </div>
   );
 };
@@ -1200,6 +1360,16 @@ export default function FACEITTeamCompare() {
               return null; // Skip if no teams found
             }
 
+            const teamLookup = {};
+            if (faction1.team_id) {
+              teamLookup[faction1.team_id] = faction1.name;
+            }
+            if (faction2.team_id) {
+              teamLookup[faction2.team_id] = faction2.name;
+            }
+
+            const vetoes = extractVetoesFromVoting(matchData.voting, teamLookup);
+
             // Find which faction is our team based on team name
             let opponentFaction = null;
 
@@ -1280,6 +1450,7 @@ export default function FACEITTeamCompare() {
                   isBO3Map: rounds.length > 1,
                   mapNumber: roundIndex + 1,
                   playerIds: teamPlayerIds,
+                  vetoes,
                 };
               }).filter(map => map !== null && map.map !== 'Unknown');
             }
@@ -1310,6 +1481,7 @@ export default function FACEITTeamCompare() {
 
         // Store ALL matches (unfiltered) for season filtering
         fullTeamData.allMatches = matchDetails;
+        fullTeamData.vetoStats = computeVetoStats(matchDetails, fullTeamData.id, fullTeamData.name);
 
         console.log('All matches stored:', matchDetails.length);
       } catch (err) {
@@ -1425,6 +1597,8 @@ export default function FACEITTeamCompare() {
       matches: totalMatches,
       winRate: totalMatches > 0 ? Math.round((totalWins / totalMatches) * 100) : 0,
     };
+
+    filtered.vetoStats = computeVetoStats(seasonMatches, filtered.id, filtered.name);
 
     return filtered;
   }, []);
@@ -2974,6 +3148,60 @@ export default function FACEITTeamCompare() {
           font-size: 11px;
           color: var(--text-muted);
           font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Veto Summary */
+        .veto-summary {
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-md);
+          padding: 16px;
+          margin-bottom: 24px;
+        }
+
+        .veto-meta {
+          font-size: 12px;
+          color: var(--text-muted);
+          margin-bottom: 12px;
+        }
+
+        .veto-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .veto-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 8px 12px;
+          background: var(--bg-card);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-sm);
+          font-size: 12px;
+        }
+
+        .veto-map {
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .veto-count {
+          font-family: 'JetBrains Mono', monospace;
+          color: var(--text-secondary);
+        }
+
+        .veto-note {
+          margin-top: 12px;
+          padding: 8px 12px;
+          background: var(--faceit-orange-dim);
+          border: 1px solid rgba(255, 85, 0, 0.35);
+          border-radius: var(--radius-sm);
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--faceit-orange);
+          text-align: center;
         }
 
         /* Win Rate Bars */
