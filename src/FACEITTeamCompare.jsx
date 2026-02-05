@@ -357,6 +357,32 @@ const normalizeMapName = (name) => {
   return nameMap[normalized] || name;
 };
 
+const getTeamPlayerIdsFromMatchStats = (matchStats, teamId, teamName) => {
+  if (!matchStats || !Array.isArray(matchStats.rounds)) {
+    return [];
+  }
+
+  const roundWithTeams = matchStats.rounds.find(round => Array.isArray(round.teams) && round.teams.length > 0);
+  if (!roundWithTeams) {
+    return [];
+  }
+
+  const matchingTeam = roundWithTeams.teams.find(team => {
+    if (!team) return false;
+    if (team.team_id && teamId && team.team_id.toString() === teamId.toString()) return true;
+    if (team.team_stats?.['Team'] && team.team_stats['Team'] === teamName) return true;
+    return false;
+  });
+
+  if (!matchingTeam || !Array.isArray(matchingTeam.players)) {
+    return [];
+  }
+
+  return matchingTeam.players
+    .map(player => player.player_id || player.playerId)
+    .filter(Boolean);
+};
+
 // Transform FACEIT API data to our app format
 const transformTeamData = (teamDetails, teamStats, memberStats) => {
   const lifetime = teamStats?.lifetime || {};
@@ -624,10 +650,18 @@ const TeamSearch = ({ label, onSelect, selectedTeam, excludeId, api }) => {
 };
 
 // Team Card Component
-const TeamCard = ({ team, side }) => {
-  const avgRating = team.roster.length > 0
+const TeamCard = ({ team, side, selectedSeason }) => {
+  const rosterCount = team.roster.length;
+  const avgRating = rosterCount > 0
     ? (team.roster.reduce((sum, p) => sum + p.rating, 0) / team.roster.length).toFixed(2)
-    : '1.00';
+    : '0.00';
+  const avgHs = rosterCount > 0
+    ? Math.round(team.roster.reduce((s, p) => s + p.hs, 0) / team.roster.length)
+    : 0;
+  const avgWinRate = rosterCount > 0
+    ? Math.round(team.roster.reduce((s, p) => s + p.winRate, 0) / team.roster.length)
+    : 0;
+  const rosterInfo = team.rosterFilterInfo;
 
   return (
     <div className={`team-card ${side}`}>
@@ -650,6 +684,9 @@ const TeamCard = ({ team, side }) => {
       </div>
 
       <div className="team-record">
+        <div className="record-context">
+          Season {selectedSeason} record
+        </div>
         <div className="record-item wins">
           <span className="record-num">{team.record.wins}</span>
           <span className="record-label">Wins</span>
@@ -662,7 +699,14 @@ const TeamCard = ({ team, side }) => {
         <div className="record-wr">{team.record.winRate}% WR</div>
       </div>
 
-      <div className="section-title">Roster</div>
+      <div className="section-title">
+        {rosterInfo?.filtered ? 'Active Roster' : 'Roster'}
+        <span className="section-subtitle">
+          {rosterInfo?.filtered
+            ? `${rosterInfo.activeCount}/${rosterInfo.totalCount} active in ${selectedSeason}`
+            : `Season ${selectedSeason}`}
+        </span>
+      </div>
       <div className="roster-table">
         <div className="roster-header">
           <span>Player</span>
@@ -671,36 +715,44 @@ const TeamCard = ({ team, side }) => {
           <span>HS%</span>
           <span>Win%</span>
         </div>
-        {team.roster.map((player) => (
-          <Tooltip
-            key={player.id}
-            content={
-              <div className="player-tooltip">
-                <div>Matches: {player.matches}</div>
-                <div>Wins: {player.wins}</div>
-                <div>K/R: {player.kpr}</div>
-              </div>
-            }
-          >
-            <div className="roster-row">
-              <span className="player-name">
-                {player.name}
-                {player.role === 'Leader' && <span className="leader-badge">★</span>}
-              </span>
-              <span><SkillLevelBadge level={player.skillLevel} /></span>
-              <span><RatingBadge rating={player.rating} /></span>
-              <span>{player.hs}%</span>
-              <span>{player.winRate}%</span>
+        {team.roster.length > 0 ? (
+          <>
+            {team.roster.map((player) => (
+              <Tooltip
+                key={player.id}
+                content={
+                  <div className="player-tooltip">
+                    <div>Matches: {player.matches}</div>
+                    <div>Wins: {player.wins}</div>
+                    <div>K/R: {player.kpr}</div>
+                  </div>
+                }
+              >
+                <div className="roster-row">
+                  <span className="player-name">
+                    {player.name}
+                    {player.role === 'Leader' && <span className="leader-badge">★</span>}
+                  </span>
+                  <span><SkillLevelBadge level={player.skillLevel} /></span>
+                  <span><RatingBadge rating={player.rating} /></span>
+                  <span>{player.hs}%</span>
+                  <span>{player.winRate}%</span>
+                </div>
+              </Tooltip>
+            ))}
+            <div className="roster-avg">
+              <span>Team Average</span>
+              <span></span>
+              <span><RatingBadge rating={parseFloat(avgRating)} /></span>
+              <span>{avgHs}%</span>
+              <span>{avgWinRate}%</span>
             </div>
-          </Tooltip>
-        ))}
-        <div className="roster-avg">
-          <span>Team Average</span>
-          <span></span>
-          <span><RatingBadge rating={parseFloat(avgRating)} /></span>
-          <span>{Math.round(team.roster.reduce((s, p) => s + p.hs, 0) / team.roster.length)}%</span>
-          <span>{Math.round(team.roster.reduce((s, p) => s + p.winRate, 0) / team.roster.length)}%</span>
-        </div>
+          </>
+        ) : (
+          <div className="roster-empty">
+            No active players found for this season.
+          </div>
+        )}
       </div>
 
       {team.recentMatches && team.recentMatches.length > 0 && (
@@ -1165,6 +1217,11 @@ export default function FACEITTeamCompare() {
             const opponent = opponentFaction.name || 'Unknown';
             const matchTimestamp = matchData.started_at || matchData.finished_at || Date.now() / 1000;
             const championship_name = matchData.competition_name || '';
+            const teamPlayerIds = getTeamPlayerIdsFromMatchStats(
+              matchStats,
+              teamDetails.team_id,
+              teamDetails.name
+            );
 
             // matchStats.rounds contains the actual map data with round scores
             const rounds = matchStats.rounds || [];
@@ -1222,6 +1279,7 @@ export default function FACEITTeamCompare() {
                   championship_name,
                   isBO3Map: rounds.length > 1,
                   mapNumber: roundIndex + 1,
+                  playerIds: teamPlayerIds,
                 };
               }).filter(map => map !== null && map.map !== 'Unknown');
             }
@@ -1282,6 +1340,30 @@ export default function FACEITTeamCompare() {
     );
 
     console.log(`Filtered to ${seasonMatches.length} matches for ${season}`);
+
+    const activePlayerIds = new Set();
+    seasonMatches.forEach(match => {
+      if (Array.isArray(match.playerIds)) {
+        match.playerIds.forEach(id => activePlayerIds.add(id));
+      }
+    });
+
+    if (activePlayerIds.size > 0) {
+      filtered.roster = filtered.roster.filter(player => activePlayerIds.has(player.id));
+      filtered.rosterFilterInfo = {
+        activeCount: filtered.roster.length,
+        totalCount: teamData.roster.length,
+        filtered: true,
+        season,
+      };
+    } else {
+      filtered.rosterFilterInfo = {
+        activeCount: filtered.roster.length,
+        totalCount: filtered.roster.length,
+        filtered: false,
+        season,
+      };
+    }
 
     // Reset map stats
     Object.keys(filtered.mapStats).forEach(mapName => {
@@ -1463,7 +1545,7 @@ export default function FACEITTeamCompare() {
             {activeSection === 'compare' && (
               <section className="single-team-section">
                 <div className="unified-team-card">
-                  <TeamCard team={filteredTeamA} side="team-a" />
+                  <TeamCard team={filteredTeamA} side="team-a" selectedSeason={selectedSeason} />
 
                   <div className="overview-divider"></div>
 
@@ -1479,13 +1561,15 @@ export default function FACEITTeamCompare() {
                       <div className="overview-stat">
                         <span className="stat-label">Total Matches</span>
                         <span className="stat-value">{filteredTeamA.record.matches}</span>
-                        <span className="stat-subtext">Last 6 Months</span>
+                        <span className="stat-subtext">Season {selectedSeason}</span>
                       </div>
                       <div className="stat-divider"></div>
                       <div className="overview-stat">
                         <span className="stat-label">Average Rating</span>
                         <span className="stat-value">
-                          {(filteredTeamA.roster.reduce((sum, p) => sum + p.rating, 0) / filteredTeamA.roster.length).toFixed(2)}
+                          {filteredTeamA.roster.length > 0
+                            ? (filteredTeamA.roster.reduce((sum, p) => sum + p.rating, 0) / filteredTeamA.roster.length).toFixed(2)
+                            : '0.00'}
                         </span>
                         <span className="stat-subtext">Team Average</span>
                       </div>
@@ -2652,6 +2736,17 @@ export default function FACEITTeamCompare() {
           background: var(--bg-secondary);
           border-radius: var(--radius-md);
           margin-bottom: 24px;
+          position: relative;
+          flex-wrap: wrap;
+        }
+
+        .record-context {
+          width: 100%;
+          font-size: 10px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          color: var(--text-muted);
         }
 
         .record-item {
@@ -2694,6 +2789,10 @@ export default function FACEITTeamCompare() {
         }
 
         .section-title {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 12px;
           font-size: 11px;
           font-weight: 700;
           text-transform: uppercase;
@@ -2702,6 +2801,14 @@ export default function FACEITTeamCompare() {
           margin-bottom: 12px;
           padding-bottom: 8px;
           border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .section-subtitle {
+          font-size: 10px;
+          font-weight: 600;
+          text-transform: none;
+          letter-spacing: 0.5px;
+          color: var(--text-secondary);
         }
 
         /* Roster Table */
@@ -2745,6 +2852,15 @@ export default function FACEITTeamCompare() {
           background: var(--bg-tertiary);
           border-radius: var(--radius-sm);
           margin-top: 8px;
+        }
+
+        .roster-empty {
+          padding: 16px;
+          font-size: 12px;
+          color: var(--text-secondary);
+          background: var(--bg-secondary);
+          border-radius: var(--radius-sm);
+          text-align: center;
         }
 
         .player-name {
