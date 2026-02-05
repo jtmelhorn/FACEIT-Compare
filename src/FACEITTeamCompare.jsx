@@ -962,7 +962,7 @@ export default function FACEITTeamCompare() {
   const [teamA, setTeamA] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [selectedSeason, setSelectedSeason] = useState('S55'); // Season filter
+  const [selectedSeason, setSelectedSeason] = useState('S56'); // Season filter
   const [headerCollapsed, setHeaderCollapsed] = useState(false); // Collapsible header
   const [activeSection, setActiveSection] = useState('compare'); // Active tab section
 
@@ -1423,6 +1423,7 @@ export default function FACEITTeamCompare() {
               onChange={(e) => setSelectedSeason(e.target.value)}
               className="season-select"
             >
+              <option value="S56">Season 56</option>
               <option value="S55">Season 55</option>
               <option value="S54">Season 54</option>
               <option value="S53">Season 53</option>
